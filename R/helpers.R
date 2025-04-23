@@ -1,4 +1,9 @@
 # Helper functions for UI rendering
+#
+#
+# ── Helper field sets ─────────────────────────────────────────────
+# Exactly the UME fields you want for "Entering Residency"
+
 
 # Parse REDCap choice strings into named vectors with error handling
 parse_choices <- function(raw) {
@@ -957,14 +962,23 @@ handle_s_eval_submission <- function(fields_to_collect, record_id) {
   if (is.null(next_inst)) return(FALSE)
 
   # 3) build the payload
+  # look up the numeric period
+  period_code <- period_map[selected_period()]
+  if (is.na(period_code)) {
+    # fallback if somehow the label isn’t in the map
+    period_code <- as.numeric(selected_period())
+  }
+
+  # build the base tibble with numeric code
   base <- tibble::tibble(
     record_id                = record_id,
     redcap_repeat_instrument = "s_eval",
     redcap_repeat_instance   = next_inst,
     s_e_date                 = as.character(Sys.Date()),
-    s_e_period               = selected_period(),
+    s_e_period               = period_code,
     s_eval_complete          = 0
   )
+
   vals <- lapply(fields_to_collect, function(fld) {
     if (!is.null(responses[[fld]])) responses[[fld]] else input[[fld]]
   }) %>% setNames(fields_to_collect)
@@ -1002,3 +1016,541 @@ mark_self_assess_complete <- function(record_id) {
     showNotification("Could not set complete flag.", type="error")
   })
 }
+
+# Add these to helpers.R
+
+# Process form inputs for REDCap submission
+process_form_inputs <- function(inputs, valid_fields, checkbox_fields = NULL, checkbox_options = NULL) {
+  payload <- list()
+
+  # Process regular fields
+  for (field in names(inputs)) {
+    # Skip fields with null values or UI-only fields
+    if (is.null(inputs[[field]]) || grepl("^(btn_|section|card)", field))
+      next
+
+    # Add validation for email field if it exists
+    if (field == "s_e_fac_email" && !is.null(inputs[[field]])) {
+      # Check if it's a valid email format
+      if (!grepl("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$", inputs[[field]])) {
+        next
+      }
+    }
+
+    # Process regular (non-checkbox) fields
+    if (field %in% valid_fields && !(field %in% checkbox_fields)) {
+      # Handle different types of inputs correctly
+      if (length(inputs[[field]]) > 1) {
+        # For multi-select inputs, join with commas
+        payload[[field]] <- paste(inputs[[field]], collapse = ",")
+      } else {
+        # For single value inputs
+        payload[[field]] <- inputs[[field]]
+      }
+    }
+  }
+
+  # Process checkbox fields
+  if (!is.null(checkbox_fields) && !is.null(checkbox_options)) {
+    for (cb_field in checkbox_fields) {
+      if (!is.null(inputs[[cb_field]])) {
+        # Get the selected values
+        selected_values <- inputs[[cb_field]]
+
+        # Clean up the values
+        if (is.character(selected_values)) {
+          if (any(grepl(",", selected_values))) {
+            selected_codes <- sapply(selected_values, function(val) {
+              gsub("\\s*,.*$", "", val)
+            })
+          } else {
+            selected_codes <- selected_values
+          }
+        } else {
+          selected_codes <- as.character(selected_values)
+        }
+
+        # Process each option for this checkbox field
+        if (!is.null(checkbox_options[[cb_field]])) {
+          for (option_code in checkbox_options[[cb_field]]) {
+            field_name <- paste0(cb_field, "___", option_code)
+            clean_option <- gsub("\"", "", option_code)
+
+            if (any(selected_codes %in% clean_option)) {
+              payload[[field_name]] <- "1"
+            } else {
+              payload[[field_name]] <- "0"
+            }
+          }
+        }
+      } else {
+        # Set all options to 0 if not selected
+        if (!is.null(checkbox_options[[cb_field]])) {
+          for (option_code in checkbox_options[[cb_field]]) {
+            field_name <- paste0(cb_field, "___", option_code)
+            payload[[field_name]] <- "0"
+          }
+        }
+      }
+    }
+  }
+
+  return(payload)
+}
+
+# Extract checkbox information from REDCap dictionary
+extract_checkbox_info <- function(rdm_dict, form_name) {
+  # Get the dictionary for this form
+  form_dict <- rdm_dict %>% filter(form_name == form_name)
+
+  # Get checkbox fields
+  checkbox_fields <- form_dict %>%
+    filter(field_type == "checkbox") %>%
+    pull(field_name)
+
+  # For each checkbox field, extract options
+  checkbox_options <- list()
+  for (cb_field in checkbox_fields) {
+    # Get the select_choices_or_calculations
+    choices_text <- form_dict %>%
+      filter(field_name == cb_field) %>%
+      pull(select_choices_or_calculations) %>%
+      first()
+
+    if (!is.null(choices_text) && choices_text != "") {
+      # Parse the choices
+      choices <- strsplit(choices_text, "\\|")[[1]]
+      codes <- sapply(choices, function(x) {
+        trim_code <- trimws(gsub(",.*$", "", x))
+        return(trim_code)
+      })
+      checkbox_options[[cb_field]] <- codes
+    }
+  }
+
+  return(list(
+    fields = checkbox_fields,
+    options = checkbox_options
+  ))
+}
+
+# Prepare REDCap payload
+prepare_redcap_payload <- function(record_id, instrument, instance, period, input_data, valid_fields, responses = NULL) {
+  # Base data
+  payload <- list(
+    record_id = record_id,
+    redcap_repeat_instrument = instrument,
+    redcap_repeat_instance = instance,
+    s_e_date = format(Sys.Date(), "%Y-%m-%d"),
+    s_e_period = period
+  )
+
+  # Add form complete status
+  form_complete_field <- paste0(instrument, "_complete")
+  payload[[form_complete_field]] <- 0
+
+  # Combine with input data
+  for (field in names(input_data)) {
+    if (field %in% valid_fields) {
+      payload[[field]] <- input_data[[field]]
+    }
+  }
+
+  # Add responses if provided
+  if (!is.null(responses)) {
+    for (field in names(responses)) {
+      if (!is.null(responses[[field]]) && field %in% valid_fields) {
+        payload[[field]] <- responses[[field]]
+      }
+    }
+  }
+
+  # Ensure all fields have length 1
+  for (name in names(payload)) {
+    if (length(payload[[name]]) != 1) {
+      payload[[name]] <- payload[[name]][1]
+    }
+  }
+
+  return(as.data.frame(payload, stringsAsFactors = FALSE))
+}
+
+submit_to_redcap_with_period_check <- function(record_id, instrument, period_text, data, url, token) {
+  # Create correct mapping between text periods and their numeric equivalents
+  period_mapping <- c(
+    "Entering Residency" = 1,  # This was missing in your original mapping
+    "Mid Intern" = 2,          # These values were all off by 1
+    "End Intern" = 3,
+    "Mid PGY2" = 4,
+    "End PGY2" = 5,
+    "Mid PGY3" = 6,
+    "Graduating" = 7,
+    "Interim Review" = 8       # Added this if needed
+  )
+
+  # Convert the text period to its numeric equivalent
+  # Fix: Use exact matching to prevent vector results
+  period_numeric <- as.numeric(period_mapping[period_text])
+
+  # If period_text isn't in our mapping, try to convert it directly
+  if (length(period_numeric) != 1 || is.na(period_numeric)) {
+    if (!is.na(suppressWarnings(as.numeric(period_text)))) {
+      period_numeric <- as.numeric(period_text)
+    } else {
+      message("Warning: Unknown period text '", period_text, "'. Using as-is.")
+      period_numeric <- period_text
+    }
+  }
+
+  message("Checking for existing instances with period: ", period_text,
+          " (numeric value: ", period_numeric, ") for record_id: ", record_id)
+
+  # Make sure the period is set correctly in the data
+  data$s_e_period <- period_numeric
+
+  # Get all existing data for this record/instrument
+  response <- httr::POST(
+    url = url,
+    body = list(
+      token = token,
+      content = "record",
+      action = "export",
+      format = "json",
+      type = "flat",
+      records = record_id,
+      forms = instrument,
+      rawOrLabel = "raw",
+      rawOrLabelHeaders = "raw",
+      exportCheckboxLabel = "false",
+      exportSurveyFields = "false",
+      exportDataAccessGroups = "false",
+      returnFormat = "json"
+    ),
+    encode = "form"
+  )
+
+  # Initialize variables
+  existing_data <- NULL
+  existing_instances <- data.frame(instance = integer(0), period = integer(0))
+  matching_instance <- NULL
+
+  # Process response
+  if (httr::status_code(response) == 200) {
+    response_text <- httr::content(response, "text", encoding = "UTF-8")
+
+    if (response_text != "" && response_text != "[]") {
+      tryCatch({
+        existing_data <- jsonlite::fromJSON(response_text)
+        message("Retrieved existing data from REDCap:")
+        print(existing_data)
+
+        # Build a list of existing instances and their periods
+        if (is.data.frame(existing_data) && nrow(existing_data) > 0) {
+          for (i in 1:nrow(existing_data)) {
+            instance_num <- i  # Default to row number
+
+            # If redcap_repeat_instance exists, use that
+            if ("redcap_repeat_instance" %in% names(existing_data)) {
+              instance_num <- as.numeric(existing_data$redcap_repeat_instance[i])
+            }
+
+            # If s_e_period exists, record it
+            if ("s_e_period" %in% names(existing_data)) {
+              # Fix: Ensure we're dealing with a single value for each row
+              period_num <- as.numeric(existing_data$s_e_period[i])
+
+              # Add to our tracking dataframe
+              existing_instances <- rbind(existing_instances,
+                                          data.frame(instance = instance_num,
+                                                     period = period_num))
+            }
+          }
+        }
+
+        # Look for a match on period
+        if (nrow(existing_instances) > 0) {
+          message("Found existing instances:")
+          print(existing_instances)
+
+          # Find the matching period
+          for (i in 1:nrow(existing_instances)) {
+            # Fix: Ensure we're comparing single values
+            current_period <- existing_instances$period[i]
+            if (!is.na(current_period) &&
+                !is.na(period_numeric) &&
+                length(current_period) == 1 &&
+                length(period_numeric) == 1 &&
+                current_period == period_numeric) {
+              matching_instance <- existing_instances$instance[i]
+              message("Found matching period ", period_numeric, " in instance ", matching_instance)
+              break
+            }
+          }
+        }
+      }, error = function(e) {
+        message("Error processing REDCap data: ", e$message)
+      })
+    } else {
+      message("No data returned from REDCap API")
+    }
+  } else {
+    message("Error fetching data: ", httr::status_code(response), " - ",
+            httr::content(response, "text"))
+  }
+
+  # If we found a matching instance, update it
+  if (!is.null(matching_instance)) {
+    message("Found matching instance with period ", period_numeric, ": ", matching_instance, ". Updating this instance.")
+
+    # Set the instance number in the data
+    data$redcap_repeat_instance <- matching_instance
+    data$redcap_repeat_instrument <- instrument
+
+    # Submit the data to REDCap using direct API call
+    return(direct_redcap_import(data, record_id, url, token))
+  }
+
+  # If we didn't find a matching instance, create a new one
+  message("No matching instance found for period ", period_numeric, ". Creating a new instance.")
+
+  # Find the next available instance number
+  next_instance <- 1
+  if (nrow(existing_instances) > 0) {
+    next_instance <- max(existing_instances$instance) + 1
+  }
+
+  message("Using instance number: ", next_instance, " for new record")
+
+  # Set the instance number in the data
+  data$redcap_repeat_instance <- next_instance
+  data$redcap_repeat_instrument <- instrument
+
+  # Submit the new instance to REDCap
+  return(direct_redcap_import(data, record_id, url, token))
+}
+
+# Function to directly import data to REDCap without relying on REDCapR
+direct_redcap_import <- function(data, record_id, url, token) {
+  # Ensure data has the correct structure for repeating instruments
+  if (!"redcap_repeat_instrument" %in% names(data)) {
+    message("Adding redcap_repeat_instrument to data")
+    data$redcap_repeat_instrument <- "s_eval"  # Make sure this matches your form name exactly
+  }
+
+  if (!"redcap_repeat_instance" %in% names(data)) {
+    message("Adding redcap_repeat_instance to data")
+    data$redcap_repeat_instance <- 1  # Default to instance 1 if not specified
+  }
+
+  # Ensure record_id is in the data
+  if (!"record_id" %in% names(data)) {
+    message("Adding record_id to data")
+    data$record_id <- record_id
+  }
+
+  # Ensure all data is character type for REDCap
+  data <- as.data.frame(data, stringsAsFactors = FALSE)
+  for (col in names(data)) {
+    data[[col]] <- as.character(data[[col]])
+  }
+
+  # Convert data frame to JSON
+  data_json <- jsonlite::toJSON(data, auto_unbox = TRUE)
+
+  # Log the data being sent to REDCap for debugging
+  message("Sending data to REDCap:")
+  print(data)
+
+  # Submit to REDCap API
+  response <- httr::POST(
+    url = url,
+    body = list(
+      token = token,
+      content = "record",
+      action = "import",
+      format = "json",
+      type = "flat",
+      overwriteBehavior = "normal",
+      forceAutoNumber = "false",
+      data = data_json,
+      returnContent = "count",
+      returnFormat = "json"
+    ),
+    encode = "form"
+  )
+
+  # Check response
+  if (httr::status_code(response) == 200) {
+    response_content <- httr::content(response, "text", encoding = "UTF-8")
+    message("REDCap API response: ", response_content)
+
+    return(list(
+      success = TRUE,
+      outcome_message = paste("Successfully submitted data for record", record_id)
+    ))
+  } else {
+    error_message <- httr::content(response, "text", encoding = "UTF-8")
+    message("Error submitting to REDCap: ", error_message)
+
+    return(list(
+      success = FALSE,
+      outcome_message = paste("Failed to submit data for record", record_id, ":", error_message)
+    ))
+  }
+}
+
+# Function to submit resident_data (non-repeating form)
+submit_resident_data <- function(record_id, data, url, token) {
+  # Ensure record_id is in the data
+  if (!"record_id" %in% names(data)) {
+    message("Adding record_id to data")
+    data$record_id <- record_id
+  }
+
+  # For non-repeating forms, REMOVE these fields if they exist
+  data$redcap_repeat_instrument <- NULL
+  data$redcap_repeat_instance <- NULL
+
+  # Ensure all data is character type for REDCap
+  data <- as.data.frame(data, stringsAsFactors = FALSE)
+  for (col in names(data)) {
+    data[[col]] <- as.character(data[[col]])
+  }
+
+  # Convert data frame to JSON
+  data_json <- jsonlite::toJSON(data, auto_unbox = TRUE)
+
+  # Log the data being sent to REDCap for debugging
+  message("Sending resident_data to REDCap:")
+  print(data)
+
+  # Submit to REDCap API
+  response <- httr::POST(
+    url = url,
+    body = list(
+      token = token,
+      content = "record",
+      action = "import",
+      format = "json",
+      type = "flat",
+      overwriteBehavior = "normal",
+      forceAutoNumber = "false",
+      data = data_json,
+      returnContent = "count",
+      returnFormat = "json"
+    ),
+    encode = "form"
+  )
+
+  # Check response
+  if (httr::status_code(response) == 200) {
+    response_content <- httr::content(response, "text", encoding = "UTF-8")
+    message("REDCap API response: ", response_content)
+
+    return(list(
+      success = TRUE,
+      outcome_message = paste("Successfully submitted resident data for record", record_id)
+    ))
+  } else {
+    error_message <- httr::content(response, "text", encoding = "UTF-8")
+    message("Error submitting to REDCap: ", error_message)
+
+    return(list(
+      success = FALSE,
+      outcome_message = paste("Failed to submit resident data for record", record_id, ":", error_message)
+    ))
+  }
+}
+
+
+
+#' Render the “Next Steps” block for the Graduating section
+#'
+#' @param rdm_dict A data frame of your REDCap dictionary
+#' @param graduating_fields A character vector of field_names to include for Graduating
+#' @return A tagList of UI elements
+render_next_steps_block <- function(rdm_dict, graduating_fields) {
+  gdf <- rdm_dict %>%
+    filter(form_name == "s_eval", field_name %in% graduating_fields)
+
+  tagList(
+    h3("Graduation Plans"),
+    selectInput(
+      "s_e_grad_next",
+      gdf$field_label[gdf$field_name == "s_e_grad_next"],
+      choices = parse_choices(
+        gdf$select_choices_or_calculations[gdf$field_name == "s_e_grad_next"]
+      )
+    ),
+    conditionalPanel(
+      condition = "input.s_e_grad_next == '3'",
+      checkboxGroupInput(
+        "s_e_grad_fellow",
+        gdf$field_label[gdf$field_name == "s_e_grad_fellow"],
+        choices = parse_choices(
+          gdf$select_choices_or_calculations[gdf$field_name == "s_e_grad_fellow"]
+        )
+      )
+    ),
+    conditionalPanel(
+      condition = "input.s_e_grad_fellow.indexOf('12') >= 0",
+      textInput(
+        "s_e_grad_fellow_oth",
+        gdf$field_label[gdf$field_name == "s_e_grad_fellow_oth"]
+      )
+    ),
+    conditionalPanel(
+      condition = "input.s_e_grad_next == '4'",
+      textInput(
+        "s_e_grad_next_othe",
+        gdf$field_label[gdf$field_name == "s_e_grad_next_othe"]
+      )
+    ),
+    conditionalPanel(
+      condition = "input.s_e_grad_next == '1' || input.s_e_grad_next == '2'",
+      tagList(
+        selectInput(
+          "s_e_grad_where",
+          gdf$field_label[gdf$field_name == "s_e_grad_where"],
+          choices = parse_choices(
+            gdf$select_choices_or_calculations[gdf$field_name == "s_e_grad_where"]
+          )
+        ),
+        selectInput(
+          "s_e_grad_loc",
+          gdf$field_label[gdf$field_name == "s_e_grad_loc"],
+          choices = parse_choices(
+            gdf$select_choices_or_calculations[gdf$field_name == "s_e_grad_loc"]
+          )
+        ),
+        conditionalPanel(
+          condition = "input.s_e_grad_loc == '4'",
+          textInput(
+            "s_e_grad_loc_other",
+            gdf$field_label[gdf$field_name == "s_e_grad_loc_other"]
+          )
+        )
+      )
+    )
+  )
+}
+
+# The contact-block function doesn’t need the graduating_fields argument:
+render_contact_block <- function(rdm_dict) {
+  cdf <- rdm_dict %>%
+    filter(form_name == "s_eval",
+           field_name %in% c("s_e_grad_email","s_e_grad_phone"))
+
+  tagList(
+    h3("Future Contact Information"),
+    textInput(
+      "s_e_grad_email",
+      cdf$field_label[cdf$field_name == "s_e_grad_email"]
+    ),
+    textInput(
+      "s_e_grad_phone",
+      cdf$field_label[cdf$field_name == "s_e_grad_phone"]
+    )
+  )
+}
+

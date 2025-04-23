@@ -5,24 +5,23 @@ ui <- fluidPage(
     ".hidden-card { display: none; }"
   )),
 
-  # ─── Initial Screen ─────────────────────────────────────────────────────────
-  conditionalPanel(
-    condition = "!input.access_code_input",
-    div(
-      class = "initial-screen text-center mt-5",
-      h1("IMSLU Resident Self-Assessment Form"),
-      p("Please enter your unique access code to start"),
-      textInput(
-        "access_code_input",
-        "Access Code:",
-        placeholder = "ABC123"
-      )
-    )
+  # always show this
+  div(
+    class = "initial-screen text-center mt-5",
+    h1("IMSLU Resident Self-Assessment Form"),
+    p("Please enter your unique access code to start"),
+    textInput("access_code_input","Access Code:",placeholder="ABC123")
   ),
 
-  # ─── Main App UI (visible once access code entered) ─────────────────────────
+  # show an error message *once* they type something invalid
   conditionalPanel(
-    condition = "input.access_code_input",
+    condition = "input.access_code_input && !output.valid_code",
+    p("❌ Invalid access code, try again", style="color:red;")
+  ),
+
+  # everything else only shows when code is valid
+  conditionalPanel(
+    condition = "output.valid_code",
     div(
       class = "container mt-4",
       # Header: resident & coach
@@ -135,7 +134,6 @@ ui <- fluidPage(
       ),
 
       # Card 3: Review of Program
-      # Card 3: Review of Program
       div(
         id = "section3_card", class = "hidden-card",
         card(
@@ -204,19 +202,14 @@ ui <- fluidPage(
         )
       ),
 
-      # Card 4: Scholarship
+      # ─── Card 4: Scholarship ────────────────────────────────────────────────────────
       div(
-        id = "section4_card", class = "hidden-card",
+        id    = "section4_card", class = "hidden-card",
         card(
           card_header("4. Scholarship"),
           card_body(
-            checkboxGroupInput("scholarship_activities", "Select all scholarship activities:",
-                               choices = c("Published Research","Conference Presentations","Grant Applications","Peer Review","Manuscript Writing","Research Collaboration","Other")),
-            conditionalPanel(
-              condition = "input.scholarship_activities.includes('Other')",
-              textInput("other_scholarship", "Please specify other scholarship activities:")
-            ),
-            numericInput("num_publications", "Number of publications this period:", 0, min = 0),
+            # ← placeholder for all scholarship inputs
+            uiOutput("card4UI"),
             actionButton("section4_next", "Next Section", class = "btn-primary")
           )
         )

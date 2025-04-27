@@ -30,6 +30,7 @@ parse_choices <- function(raw) {
   result
 }
 
+
 # For yes/no fields, provide standard choices
 safe_radio_yesno <- function(inputId, label, selected = NULL) {
   safe_radio_buttons(
@@ -1554,3 +1555,540 @@ render_contact_block <- function(rdm_dict) {
   )
 }
 
+scholarship_module_ui <- function(id){
+  ns <- NS(id)
+  tagList(
+    h3("4. Scholarship & QI Projects"),
+    selectInput(ns("type"), "Project type:",
+                choices = c("",
+                            parse_choices(rdm_dict$select_choices_or_calculations[
+                              rdm_dict$field_name=="schol_type"
+                            ])
+                )
+    ),
+    uiOutput(ns("fields")),        # will render type-specific inputs
+    actionButton(ns("add"),   "Add This Project"),
+    actionButton(ns("next_btn"), "Next Section", class="btn-primary")
+  )
+}
+
+# helpers.R
+
+
+
+#—— Scholarship module server ——#
+scholarship_module_server <- function(id, rdm_dict, record_id) {
+  moduleServer(id, function(input, output, session) {
+    ns <- session$ns
+
+    # Add this to the beginning of your scholarship_module_server function
+    shinyjs::runjs('
+  $(document).ready(function() {
+    console.log("DOM loaded - checking for cards");
+    console.log("section4_card exists:", $("#section4_card").length > 0);
+    console.log("section5_card exists:", $("#section5_card").length > 0);
+  });
+')
+
+    # Render the type‐specific fields UI
+    output$fields <- renderUI({
+      req(input$type)
+      sd <- rdm_dict %>% filter(form_name == "scholarship")
+      ns <- session$ns
+
+      if (input$type == "1") {
+        # Quality Improvement
+        tagList(
+          textAreaInput(ns("schol_qi"),
+                        sd$field_label[sd$field_name == "schol_qi"],
+                        width = "100%", height = "100px"
+          ),
+          textInput(ns("schol_res_mentor"),
+                    sd$field_label[sd$field_name == "schol_res_mentor"],
+                    value = ""
+          ),
+          selectInput(ns("schol_res_status"),
+                      sd$field_label[sd$field_name == "schol_res_status"],
+                      choices = c("", parse_choices(
+                        sd$select_choices_or_calculations[sd$field_name == "schol_res_status"]
+                      )),
+                      selected = ""
+          ),
+          selectInput(ns("schol_div"),
+                      sd$field_label[sd$field_name == "schol_div"],
+                      choices = c("", parse_choices(
+                        sd$select_choices_or_calculations[sd$field_name == "schol_div"]
+                      )),
+                      selected = ""
+          ),
+          radioButtons(ns("schol_pres"),
+                       sd$field_label[sd$field_name == "schol_pres"],
+                       choices = c("Yes", "No"),
+                       selected = character(0),
+                       inline = TRUE
+          ),
+          radioButtons(ns("schol_pub"),
+                       sd$field_label[sd$field_name == "schol_pub"],
+                       choices = c("Yes", "No"),
+                       selected = character(0),
+                       inline = TRUE
+          )
+        )
+
+      } else if (input$type == "2") {
+        # Patient Safety Review
+        tagList(
+          radioButtons(ns("schol_ps"),
+                       sd$field_label[sd$field_name == "schol_ps"],
+                       choices = c("Yes", "No"),
+                       selected = character(0),
+                       inline = TRUE
+          ),
+          radioButtons(ns("schol_rca"),
+                       sd$field_label[sd$field_name == "schol_rca"],
+                       choices = c("Yes", "No"),
+                       selected = character(0),
+                       inline = TRUE
+          )
+        )
+
+      } else if (input$type %in% c("3", "6")) {
+        # Research or Education
+        tagList(
+          textAreaInput(ns("schol_res"),
+                        sd$field_label[sd$field_name == "schol_res"],
+                        width = "100%", height = "100px"
+          ),
+          textInput(ns("schol_res_mentor"),
+                    sd$field_label[sd$field_name == "schol_res_mentor"],
+                    value = ""
+          ),
+          selectInput(ns("schol_res_status"),
+                      sd$field_label[sd$field_name == "schol_res_status"],
+                      choices = c("", parse_choices(
+                        sd$select_choices_or_calculations[sd$field_name == "schol_res_status"]
+                      )),
+                      selected = ""
+          ),
+          selectInput(ns("schol_div"),
+                      sd$field_label[sd$field_name == "schol_div"],
+                      choices = c("", parse_choices(
+                        sd$select_choices_or_calculations[sd$field_name == "schol_div"]
+                      )),
+                      selected = ""
+          ),
+          radioButtons(ns("schol_pres"),
+                       sd$field_label[sd$field_name == "schol_pres"],
+                       choices = c("Yes", "No"),
+                       selected = character(0),
+                       inline = TRUE
+          ),
+          radioButtons(ns("schol_pub"),
+                       sd$field_label[sd$field_name == "schol_pub"],
+                       choices = c("Yes", "No"),
+                       selected = character(0),
+                       inline = TRUE
+          )
+        )
+
+      } else if (input$type %in% c("4", "5")) {
+        # Presentation (4) or Publication (5) only
+        if (input$type == "4") {
+          # Presentation
+          tagList(
+            selectInput(ns("schol_pres_type"),
+                        sd$field_label[sd$field_name == "schol_pres_type"],
+                        choices = c("", parse_choices(
+                          sd$select_choices_or_calculations[sd$field_name == "schol_pres_type"]
+                        )),
+                        selected = ""
+            ),
+            textAreaInput(ns("schol_pres_conf"),
+                          sd$field_label[sd$field_name == "schol_pres_conf"],
+                          width = "100%", height = "50px"
+            ),
+            textAreaInput(ns("schol_cit"),
+                          sd$field_label[sd$field_name == "schol_cit"],
+                          width = "100%", height = "80px"
+            )
+          )
+        } else {
+          # Publication
+          tagList(
+            textAreaInput(ns("schol_cit"),
+                          sd$field_label[sd$field_name == "schol_cit"],
+                          width = "100%", height = "80px"
+            )
+          )
+        }
+
+      } else if (input$type == "7") {
+        # Committee
+        tagList(
+          textAreaInput(ns("schol_comm"),
+                        sd$field_label[sd$field_name == "schol_comm"],
+                        width = "100%", height = "80px"
+          ),
+          selectInput(ns("schol_comm_type"),
+                      sd$field_label[sd$field_name == "schol_comm_type"],
+                      choices = c("", parse_choices(
+                        sd$select_choices_or_calculations[sd$field_name == "schol_comm_type"]
+                      )),
+                      selected = ""
+          ),
+          conditionalPanel(
+            condition = paste0("input['", ns("schol_comm_type"), "']=='5'"),
+            textAreaInput(ns("schol_comm_other"),
+                          sd$field_label[sd$field_name == "schol_comm_other"],
+                          width = "100%", height = "50px"
+            )
+          )
+        )
+
+      } else {
+        NULL
+      }
+    })
+
+    # ─── Inside scholarship_module_server ───
+
+    # Helpers to show the modals:
+    showPresModal <- function() {
+      showModal(modalDialog(
+        title = "Add Presentation",
+        selectInput(ns("p_type"),
+                    "Where presented?",
+                    parse_choices(
+                      rdm_dict$select_choices_or_calculations[
+                        rdm_dict$field_name == "schol_pres_type"
+                      ]
+                    )
+        ),
+        textAreaInput(ns("p_conf"), "Conference / Details"),
+        textAreaInput(ns("p_cit"),  "Full citation"),
+        footer = tagList(
+          modalButton("Cancel"),
+          actionButton(ns("save_pres"), "Save Presentation")
+        ),
+        easyClose = FALSE
+      ))
+    }
+
+    showConfirmPresModal <- function() {
+      showModal(modalDialog(
+        title = "Presentation saved",
+        p("Would you like to add another presentation?"),
+        footer = tagList(
+          modalButton("No"),                # closes dialog
+          actionButton(ns("again_pres"), "Yes")
+        ),
+        easyClose = FALSE
+      ))
+    }
+
+    showPubModal <- function() {
+      showModal(modalDialog(
+        title = "Add Publication",
+        textAreaInput(ns("pub_cit"), "Full citation"),
+        footer = tagList(
+          modalButton("Cancel"),
+          actionButton(ns("save_pub"), "Save Publication")
+        ),
+        easyClose = FALSE
+      ))
+    }
+
+    showConfirmPubModal <- function() {
+      showModal(modalDialog(
+        title = "Publication saved",
+        p("Would you like to add another publication?"),
+        footer = tagList(
+          modalButton("No"),
+          actionButton(ns("again_pub"), "Yes")
+        ),
+        easyClose = FALSE
+      ))
+    }
+
+
+    # When user says “Yes” to schol_pres, show first presentation modal:
+    observeEvent(input$schol_pres, {
+      if (input$schol_pres == "Yes") {
+        showPresModal()
+      }
+    })
+
+    # Save a presentation
+    observeEvent(input$save_pres, {
+      removeModal()
+      handle_scholarship_submission(
+        record_id,
+        list(
+          schol_type = input$type,
+          schol_pres_type = input$p_type,
+          schol_pres_conf = input$p_conf,
+          schol_cit = input$p_cit,
+          schol_pres = 1  # Explicitly set this to 1 (Yes)
+        )
+      )
+      showConfirmPresModal()
+    })
+
+
+    # If they click “Yes” on the confirm, show the presentation modal again
+    observeEvent(input$again_pres, {
+      removeModal()
+      showPresModal()
+    })
+
+
+    # Same flow for publications:
+    observeEvent(input$schol_pub, {
+      if (input$schol_pub == "Yes") {
+        showPubModal()
+      }
+    })
+
+    # Save a publication
+    observeEvent(input$save_pub, {
+      removeModal()
+      handle_scholarship_submission(
+        record_id,
+        list(
+          schol_type = input$type,
+          schol_cit = input$pub_cit,
+          schol_pub = 1  # Explicitly set this to 1 (Yes)
+        )
+      )
+      showConfirmPubModal()
+    })
+
+    observeEvent(input$again_pub, {
+      removeModal()
+      showPubModal()
+    })
+
+    observeEvent(input$add, {
+      vals <- reactiveValuesToList(input)
+
+      ## pick out exactly the REDCap field names you want:
+      keep <- c(
+        "schol_qi",           # QI text
+        "schol_res",          # research/edu description
+        "schol_res_mentor",
+        "schol_res_status",
+        "schol_div",
+        "schol_ps",           # patient safety
+        "schol_rca",
+        "schol_pres",         # Added these Yes/No fields
+        "schol_pub"
+      )
+
+      # Filter only the keys that actually exist in vals
+      keep <- keep[keep %in% names(vals)]
+
+      # Get only the values that exist and ensure they're all vectors
+      project_data <- list()
+      for (k in keep) {
+        if (!is.null(vals[[k]])) {
+          # Convert Yes/No values to numeric
+          if (k %in% c("schol_ps", "schol_rca", "schol_pres", "schol_pub")) {
+            project_data[[k]] <- convert_yes_no(vals[[k]])
+          } else if (is.vector(vals[[k]])) {
+            project_data[[k]] <- vals[[k]]
+          } else {
+            # Convert non-vectors to character strings if possible
+            project_data[[k]] <- as.character(vals[[k]])
+          }
+        }
+      }
+
+      ## put the master dropdown on it too - using the correct field name
+      if (!is.null(input$type)) {
+        project_data$schol_type <- input$type
+      }
+
+      ## Only submit if we have data to submit
+      if (length(project_data) > 0) {
+        ## now submit
+        tryCatch({
+          handle_scholarship_submission(
+            record_id = record_id,
+            values = project_data
+          )
+          showNotification("Project saved", type = "message")
+        }, error = function(e) {
+          showNotification(paste("Error saving project:", e$message), type = "error")
+        })
+      } else {
+        showNotification("No data to save", type = "warning")
+      }
+
+      ## reset the dropdown
+      updateSelectInput(session, "type", selected = "")
+    })
+  })
+}
+
+
+# Helper function to convert Yes/No to numeric values
+convert_yes_no <- function(value) {
+  if (is.null(value) || length(value) == 0) {
+    return(NULL)
+  }
+  if (is.numeric(value)) {
+    return(value)  # Already numeric
+  }
+  if (tolower(as.character(value)) == "yes") {
+    return(1)
+  } else if (tolower(as.character(value)) == "no") {
+    return(0)
+  }
+  return(value)  # Return original if not Yes/No
+}
+
+# Modified handle_scholarship_submission to convert Yes/No fields and always create new instances
+handle_scholarship_submission <- function(record_id, values) {
+  # Convert any Yes/No values to numeric
+  yes_no_fields <- c("schol_pres", "schol_pub", "schol_ps", "schol_rca")
+  for (field in yes_no_fields) {
+    if (field %in% names(values)) {
+      values[[field]] <- convert_yes_no(values[[field]])
+    }
+  }
+
+  # Check for and fix the field name issue
+  if ("type" %in% names(values)) {
+    # Rename "type" to "schol_type" if it exists
+    type_value <- values[["type"]]
+    values[["type"]] <- NULL  # Remove the incorrect field
+
+    # Only add schol_type if it doesn't already exist
+    if (!("schol_type" %in% names(values))) {
+      values[["schol_type"]] <- type_value
+    }
+  }
+
+  # 1) figure out next instance - ALWAYS CREATE A NEW INSTANCE FOR SCHOLARSHIP
+  next_inst <- tryCatch({
+    generate_instance_2(
+      record_id = record_id,
+      instrument_name = "scholarship",
+      coach_data = NULL,
+      redcap_uri = url,
+      token = rdm_token
+    )
+  }, error = function(e) {
+    message("Error generating instance: ", e$message)
+    return(1) # Default to 1 if there's an error
+  })
+
+  # 2) build a one‐row data.frame
+  df <- tibble::tibble(
+    record_id = record_id,
+    redcap_repeat_instrument = "scholarship",
+    redcap_repeat_instance = next_inst
+  )
+
+  # Ensure all values are vectors before binding
+  values_list <- list()
+  for (name in names(values)) {
+    if (is.null(values[[name]])) {
+      # Skip NULL values
+      next
+    } else if (!is.vector(values[[name]])) {
+      # Convert non-vectors to character
+      values_list[[name]] <- as.character(values[[name]])
+    } else {
+      values_list[[name]] <- values[[name]]
+    }
+  }
+
+  # Convert to a tibble only if we have valid values
+  if (length(values_list) > 0) {
+    values_tibble <- tibble::as_tibble(values_list)
+    df2 <- dplyr::bind_cols(df, values_tibble)
+  } else {
+    df2 <- df
+  }
+
+  # Log what we're submitting for debugging
+  message("Submitting scholarship data with instance ", next_inst)
+  print(df2)
+
+  # 3) submit directly to REDCap without using submit_to_redcap_with_period_check
+  result <- tryCatch({
+    redcap_write(
+      ds = df2,
+      redcap_uri = url,
+      token = rdm_token
+    )
+  }, error = function(e) {
+    message("Error writing to REDCap: ", e$message)
+    return(list(success = FALSE, outcome_message = e$message))
+  })
+
+  # Process result
+  if (isTRUE(result$success)) {
+    message("Successfully submitted scholarship data, created instance ", next_inst)
+    return(list(
+      success = TRUE,
+      outcome_message = paste("Successfully created scholarship entry (instance ", next_inst, ")", sep = "")
+    ))
+  } else {
+    message("Failed to submit scholarship data: ", result$outcome_message)
+    return(list(
+      success = FALSE,
+      outcome_message = result$outcome_message
+    ))
+  }
+}
+
+# Improved helper function that creates a new instance every time for scholarship items
+generate_instance_2 <- function(record_id, instrument_name, coach_data = NULL,
+                                redcap_uri, token) {
+  message("Generating new instance for record_id: ", record_id,
+          " and instrument: ", instrument_name)
+
+  if (!is.null(coach_data)) {
+    message("Using provided coach_data")
+    # Filter to just the relevant instrument
+    inst_data <- coach_data[coach_data$redcap_repeat_instrument == instrument_name, ]
+
+    if (nrow(inst_data) > 0) {
+      next_instance <- max(inst_data$redcap_repeat_instance, na.rm = TRUE) + 1
+      return(next_instance)
+    } else {
+      return(1)
+    }
+  } else {
+    message("coach_data is NULL. Falling back to API call.")
+    # Pull data directly from REDCap without the problematic parameters
+    tryCatch({
+      data <- redcap_read(
+        redcap_uri = redcap_uri,
+        token = token,
+        records = record_id
+      )$data
+
+      if (nrow(data) == 0) {
+        return(1)
+      }
+
+      # Filter to just the instances for this instrument
+      inst_data <- data[data$redcap_repeat_instrument == instrument_name, ]
+
+      if (nrow(inst_data) == 0) {
+        return(1)
+      } else {
+        # Always increment by 1 from the highest instance number
+        next_instance <- max(inst_data$redcap_repeat_instance, na.rm = TRUE) + 1
+        message("Determined next instance: ", next_instance)
+        return(next_instance)
+      }
+    }, error = function(e) {
+      message("Error pulling REDCap data: ", e$message)
+      return(1)
+    })
+  }
+}

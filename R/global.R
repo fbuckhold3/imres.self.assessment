@@ -1,6 +1,7 @@
 library(shiny)
 library(shinyjs)
 library(redcapAPI)
+library(REDCapR)
 library(ggplot2)
 library(DT)
 library(dplyr)
@@ -168,6 +169,20 @@ resident_data <- get_resident_data()
 
 rdm_dict <- get_data_dict(rdm_token, url)
 ass_dict <- get_data_dict(eval_token, url)
+
+schol_data <- redcap_read(
+  redcap_uri = url,
+  token      = rdm_token,
+  forms      = "scholarship"
+)$data
+
+imres_www_path <- file.path(renv::paths$library(), "imres", "www")
+addResourcePath("imres-images", imres_www_path)
+
+message("Image path: ", imres_www_path)
+message("Path exists: ", dir.exists(imres_www_path))
+# List files to verify images are there
+message("Files: ", paste(list.files(imres_www_path), collapse=", "))
 
 ### Process Milestone Data:
 # Step 1: Pull all milestone data

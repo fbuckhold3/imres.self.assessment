@@ -208,29 +208,19 @@ ui <- fluidPage(
         card(
           card_header("4. Scholarship"),
           card_body(
-            # ← placeholder for all scholarship inputs
-            uiOutput("card4UI"),
-            actionButton("section4_next", "Next Section", class = "btn-primary")
+            uiOutput("scholarship_module_ui")
           )
         )
       ),
 
-      # Card 5: Milestone Self-Assessment
       div(
-        id = "section5_card", class = "hidden-card",
-        card(
-          card_header("5. Milestone Self-Assessment"),
-          card_body(
-            selectInput("milestone1", "Milestone 1: Core Knowledge",
-                        choices = c("Not Started","In Progress","Completed")),
-            selectInput("milestone2", "Milestone 2: Research Methods",
-                        choices = c("Not Started","In Progress","Completed")),
-            selectInput("milestone3", "Milestone 3: Professional Development",
-                        choices = c("Not Started","In Progress","Completed")),
-            textAreaInput("milestone_reflection", "Reflection:", rows = 3),
-            actionButton("section5_next", "Next Section", class = "btn-primary")
+        id = "section5_card", style = "display: none;",
+          card(
+            card_header("Milestone Self-Assessment"),
+            card_body(
+              uiOutput("milestone_module_ui")
+            )
           )
-        )
       ),
 
       # Card 6: Goals & submission

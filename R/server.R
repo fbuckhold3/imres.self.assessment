@@ -1,5 +1,4 @@
 server <- function(input, output, session) {
-
   entering_fields <- c(
     "s_e_fac_assist","s_e_fac_member","s_e_fac_email",
     "s_e_ume_goal1","s_e_ume_goal2","s_e_ume_goal3",
@@ -47,11 +46,10 @@ server <- function(input, output, session) {
     else trimws(input$access_code_input)
   })
 
-  # expose a reactive flag for “is this a real code?”
   output$valid_code <- reactive({
-    input$access_code_input %in% resident_data$access_code
+    req(access_code())                # make sure we have *something*
+    access_code() %in% resident_data$access_code
   })
-  # make it available to JS for conditionalPanel
   outputOptions(output, "valid_code", suspendWhenHidden = FALSE)
 
   resident_info <- reactive({
@@ -233,6 +231,18 @@ server <- function(input, output, session) {
     render_card3_ui(rdm_dict)
   })
 
+  output$scholarship_module_ui <- renderUI({
+    req(selected_period())
+    if (selected_period() != "Entering Residency")
+      scholarship_module_ui("schol")
+  })
+
+  scholarship_module_server(
+    "schol",
+    rdm_dict = rdm_dict,
+    record_id = fetch_record_id(resident_info(), resident_data, url, rdm_token)
+  )
+
   # Function to store the program feedback data
   store_program_feedback <- function() {
     feedback_data <- list(
@@ -271,79 +281,6 @@ server <- function(input, output, session) {
       # For all other periods: show cards 1-6 (no intro)
       transition("period_selection_card", "section1_card")
       rv$flow_path <- "standard"
-    }
-  })
-
-  observeEvent(input$section2_next, {
-    # Check if this is the entering residency flow
-    if (rv$flow_path == "entering_residency") {
-      showNotification("Attempting to submit data for Entering Residency...", type = "message")
-
-      record_id <- fetch_record_id(resident_info(), NULL, url, rdm_token)
-      validate(need(record_id, "No record_id found!"))
-
-      # Get valid fields and checkbox information
-      s_eval_dict <- rdm_dict %>% filter(form_name == "s_eval")
-      valid_fields <- s_eval_dict %>% pull(field_name)
-
-      # Extract checkbox information
-      checkbox_info <- extract_checkbox_info(rdm_dict, "s_eval")
-
-      # Process all inputs
-      all_inputs <- reactiveValuesToList(input)
-      processed_inputs <- process_form_inputs(
-        all_inputs,
-        valid_fields,
-        checkbox_info$fields,
-        checkbox_info$options
-      )
-
-      # Get the period code (ensure this is included)
-      period_code <- get_ccc_session(selected_period())
-
-      # IMPORTANT: Explicitly add the period to the processed inputs
-      processed_inputs$s_e_period <- period_code
-
-      # Prepare the payload
-      payload <- prepare_redcap_payload(
-        record_id = record_id,
-        instrument = "s_eval",
-        instance = NULL,  # Will be determined in submit function
-        period = period_code,
-        input_data = processed_inputs,
-        valid_fields = valid_fields
-      )
-
-      # Make sure s_e_period is explicitly included in the payload
-      payload$s_e_period <- period_code
-
-      # Submit to REDCap with period check
-      res <- submit_to_redcap_with_period_check(
-        record_id = record_id,
-        instrument = "s_eval",
-        period = period_code,
-        data = payload,
-        url = url,
-        token = rdm_token
-      )
-
-      if (!isTRUE(res$success)) {
-        showNotification(paste("Save failed:", res$outcome_message), type = "error", duration = NULL)
-        return()
-      } else {
-        showNotification("Self-assessment data saved!", type = "message", duration = 5)
-
-        # Store all inputs for later use in the responses reactiveValues
-        for (field_name in names(processed_inputs)) {
-          responses[[field_name]] <- processed_inputs[[field_name]]
-        }
-
-        # CHANGED: Navigate to section5_card instead of completion_card for Entering Residency flow
-        transition("section2_card", "section5_card")
-      }
-    } else {
-      # For standard flow, continue to section 3
-      transition("section2_card", "section3_card")
     }
   })
 
@@ -495,189 +432,78 @@ server <- function(input, output, session) {
     }
   })
 
-  observeEvent(input$section5_next, {
-    # Check the flow path to determine where to go next
-    if (rv$flow_path == "entering_residency") {
-      # For Entering Residency, skip card 6 and go directly to the final submission
-      req(input$goal1, input$goal1_deadline)
-      record_id <- fetch_record_id(resident_info(), NULL, url, rdm_token)
-      validate(need(record_id, "No record_id found!"))
-
-      # 1) Generate a new repeat instance
-      next_inst <- generate_new_instance(record_id,
-                                         "s_eval", NULL,
-                                         url, rdm_token)
-
-      # 2) Build base tibble
-      base <- tibble(
-        record_id                = record_id,
-        redcap_repeat_instrument = "s_eval",
-        redcap_repeat_instance   = next_inst,
-        s_e_date                 = format(Sys.Date(), "%Y-%m-%d"),
-        s_e_period               = get_ccc_session(selected_period()),
-        s_eval_complete          = 0
-      )
-
-      # 3) Collect fields for Entering Residency (only card 2 and card 5 data)
-      collected_fields <- entering_fields
-
-      # 4) Pull in stored data from responses reactiveValues
-      all_responses <- list()
-      for (field in collected_fields) {
-        if (!is.null(responses[[field]])) {
-          all_responses[[field]] <- responses[[field]]
-        } else if (!is.null(input[[field]])) {
-          all_responses[[field]] <- input[[field]]
-        }
-      }
-
-      # 5) Add in goal data from card 5
-      goal_data <- data.frame(
-        goal1                = input$goal1,
-        goal1_deadline       = as.character(input$goal1_deadline),
-        stringsAsFactors     = FALSE
-      )
-
-      # If goal2 and goal3 exist in the form, add them
-      if (!is.null(input$goal2) && !is.null(input$goal2_deadline)) {
-        goal_data$goal2 <- input$goal2
-        goal_data$goal2_deadline <- as.character(input$goal2_deadline)
-      }
-
-      if (!is.null(input$goal3) && !is.null(input$goal3_deadline)) {
-        goal_data$goal3 <- input$goal3
-        goal_data$goal3_deadline <- as.character(input$goal3_deadline)
-      }
-
-      # 6) Combine all the data
-      df_responses <- as_tibble(all_responses)
-      payload <- bind_cols(base, df_responses, goal_data)
-
-      # 7) Submit to REDCap
-      res <- submit_to_redcap(payload, record_id, url, rdm_token)
-
-      if (!isTRUE(res$success)) {
-        showNotification(paste("Save failed:", res$outcome_message), type = "error")
-        return()
-      }
-
-      # Update self-assessment completion status
-      payload_complete <- data.frame(
-        record_id            = record_id,
-        self_assess_complete = 1,
-        stringsAsFactors     = FALSE
-      )
-      res_complete <- submit_to_redcap(payload_complete, record_id, url, rdm_token)
-
-      # Show success/error notification
-      if (!isTRUE(res_complete$success)) {
-        showNotification(paste("Failed to mark assessment as complete:", res_complete$outcome_message), type = "error")
-      } else {
-        showNotification("Self-assessment successfully completed and submitted!", type = "message")
-      }
-
-      # Go directly to completion card from card 5
-      transition("section5_card", "completion_card")
-    } else {
-      # For standard flow, continue to section 6
-      transition("section5_card", "section6_card")
-    }
+  observeEvent(input[["schol-next_btn"]], {
+    transition("section4_card", "section5_card")
   })
 
-  # Keep the original submit event for the standard flow
-  observeEvent(input$submit, {
-    # This is now only for the standard flow, not for Entering Residency
-    req(input$goal1, input$goal1_deadline, rv$flow_path == "standard")
-    record_id <- fetch_record_id(resident_info(), NULL, url, rdm_token)
-    validate(need(record_id, "No record_id found!"))
+  ## Card 5 - Milestone Self assessment:
 
-    # 1) Generate a new repeat instance
-    next_inst <- generate_new_instance(record_id,
-                                       "s_eval", NULL,
-                                       url, rdm_token)
+  output$mainImage <- renderImage({
+    req(currentImageFile())
 
-    # 2) Build base tibble
-    base <- tibble(
-      record_id                = record_id,
-      redcap_repeat_instrument = "s_eval",
-      redcap_repeat_instance   = next_inst,
-      s_e_date                 = format(Sys.Date(), "%Y-%m-%d"),
-      s_e_period               = get_ccc_session(selected_period()),
-      s_eval_complete          = 0
+    # The src should use the resource path we defined
+    list(
+      src = file.path("imres-images", currentImageFile()),
+      width = 1200,
+      height = "auto",
+      alt = paste("Image", state$currentImageIndex)
     )
+  }, deleteFile = FALSE)
 
-    # 3) Collect fields for standard flow (cards 1-6)
-    collected_fields <- c(
-      # Card 1 fields
-      "s_e_plus", "s_e_delta",
-
-      # Card 2 fields (based on period)
-      switch(selected_period(),
-             "Graduating" = graduating_fields,
-             other_fields),
-
-      # Card 3 fields (program feedback)
-      program_feedback_fields
-    )
-
-    # 4) Pull in stored data from responses reactiveValues
-    all_responses <- list()
-    for (field in collected_fields) {
-      if (!is.null(responses[[field]])) {
-        all_responses[[field]] <- responses[[field]]
-      } else if (!is.null(input[[field]])) {
-        all_responses[[field]] <- input[[field]]
-      }
-    }
-
-    # 5) Add in goal data from the final goal section
-    goal_data <- data.frame(
-      goal1                = input$goal1,
-      goal1_deadline       = as.character(input$goal1_deadline),
-      stringsAsFactors     = FALSE
-    )
-
-    # If goal2 and goal3 exist in the form, add them
-    if (!is.null(input$goal2) && !is.null(input$goal2_deadline)) {
-      goal_data$goal2 <- input$goal2
-      goal_data$goal2_deadline <- as.character(input$goal2_deadline)
-    }
-
-    if (!is.null(input$goal3) && !is.null(input$goal3_deadline)) {
-      goal_data$goal3 <- input$goal3
-      goal_data$goal3_deadline <- as.character(input$goal3_deadline)
-    }
-
-    # 6) Combine all the data
-    df_responses <- as_tibble(all_responses)
-    payload <- bind_cols(base, df_responses, goal_data)
-
-    # 7) Submit to REDCap
-    res <- submit_to_redcap(payload, record_id, url, rdm_token)
-
-    if (!isTRUE(res$success)) {
-      showNotification(paste("Save failed:", res$outcome_message), type = "error")
-      return()
-    }
-
-    # Update self-assessment completion status
-    payload_complete <- data.frame(
-      record_id            = record_id,
-      self_assess_complete = 1,
-      stringsAsFactors     = FALSE
-    )
-    res_complete <- submit_to_redcap(payload_complete, record_id, url, rdm_token)
-
-    # Show success/error notification
-    if (!isTRUE(res_complete$success)) {
-      showNotification(paste("Failed to mark assessment as complete:", res_complete$outcome_message), type = "error")
-    } else {
-      showNotification("Self-assessment successfully completed and submitted!", type = "message")
-    }
-
-    # Navigate to completion card
-    transition("section6_card", "completion_card")
+  # 1) drop the milestone UI into card 5
+  output$milestone_module_ui <- renderUI({
+    req(selected_period())
+    mod_miles_rating_ui("miles")
   })
+
+  # 2) instantiate your module exactly once
+  miles_mod <- mod_miles_rating_server(
+    "miles",
+    period = selected_period
+  )
+
+  # 3) now observe the module’s done() reactive
+  observeEvent(input[["miles-done"]], {  # Use the full namespaced ID of the button
+    req(miles_mod$scores)  # Don't call scores() here
+    raw_sel  <- miles_mod$scores()  # Call it here to get the value
+    raw_desc <- miles_mod$desc()    # Call it here to get the value
+
+    `%||%` <- function(a,b) if (is.null(a)) b else a
+    mile_key2field <- c(
+      PC_1="rep_pc1_self", PC_2="rep_pc2_self", PC_3="rep_pc3_self",
+      PC_4="rep_pc4_self", PC_5="rep_pc5_self", PC_6="rep_pc6_self",
+      MK_1="rep_mk1_self", MK_2="rep_mk2_self", MK_3="rep_mk3_self",
+      SBP_1="rep_sbp1_self", SBP_2="rep_sbp2_self", SBP_3="rep_sbp3_self",
+      PBL_1="rep_pbl1_self",PBL_2="rep_pbl2_self",
+      PROF_1="rep_prof1_self",PROF_2="rep_prof2_self",
+      PROF_3="rep_prof3_self",PROF_4="rep_prof4_self",
+      ICS_1="rep_ics1_self", ICS_2="rep_ics2_self", ICS_3="rep_ics3_self"
+    )
+    payload <- list()
+    for(key in names(raw_sel)){
+      fld      <- mile_key2field[[key]]
+      desc_fld <- paste0(fld,"_desc")
+      payload[[fld]]      <- raw_sel[[key]]
+      payload[[desc_fld]] <- raw_desc[[key]] %||% ""
+    }
+    payload[["prog_mile_date_self"]]   <- as.character(Sys.Date())
+    payload[["prog_mile_period_self"]] <- as.character(get_ccc_session(selected_period()))
+
+    handle_s_eval_submission(
+      fields_to_collect = names(payload),
+      record_id         = fetch_record_id(resident_info(),resident_data,url,rdm_token),
+      values            = payload
+    )
+
+    showNotification("Milestone self-evaluation saved!", type="message")
+    if (selected_period()=="Entering Residency"){
+      transition("section5_card","completion_card")
+    } else {
+      transition("section5_card","section6_card")
+    }
+
+  })
+
 }
 
 

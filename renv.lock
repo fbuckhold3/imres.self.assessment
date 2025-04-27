@@ -934,7 +934,7 @@
       "RemoteUsername": "fbuckhold3",
       "RemoteRepo": "imres",
       "RemoteRef": "main",
-      "RemoteSha": "f4d9f2034bce57835736382276378ba626fdcb5c",
+      "RemoteSha": "e8322cb8b8978dad95e5305d37cf8953d33a01ff",
       "Requirements": [
         "DT",
         "REDCapR",
@@ -955,7 +955,7 @@
         "tidyr",
         "usethis"
       ],
-      "Hash": "540415b8226c2703822f0e738d3da74a"
+      "Hash": "b80704f859598315d272db0d3edb5ba9"
     },
     "ini": {
       "Package": "ini",

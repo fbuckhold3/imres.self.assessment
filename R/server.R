@@ -462,46 +462,118 @@ server <- function(input, output, session) {
     period = selected_period
   )
 
-  # 3) now observe the module’s done() reactive
-  observeEvent(input[["miles-done"]], {  # Use the full namespaced ID of the button
-    req(miles_mod$scores)  # Don't call scores() here
-    raw_sel  <- miles_mod$scores()  # Call it here to get the value
-    raw_desc <- miles_mod$desc()    # Call it here to get the value
+  observeEvent(input[["miles-done"]], {
+    req(miles_mod$scores(), selected_period(), resident_info())
+    raw_sel  <- miles_mod$scores()
+    raw_desc <- miles_mod$desc()
 
     `%||%` <- function(a,b) if (is.null(a)) b else a
+
+    # Mapping for field names - base fields that definitely exist
     mile_key2field <- c(
-      PC_1="rep_pc1_self", PC_2="rep_pc2_self", PC_3="rep_pc3_self",
-      PC_4="rep_pc4_self", PC_5="rep_pc5_self", PC_6="rep_pc6_self",
-      MK_1="rep_mk1_self", MK_2="rep_mk2_self", MK_3="rep_mk3_self",
-      SBP_1="rep_sbp1_self", SBP_2="rep_sbp2_self", SBP_3="rep_sbp3_self",
-      PBL_1="rep_pbl1_self",PBL_2="rep_pbl2_self",
-      PROF_1="rep_prof1_self",PROF_2="rep_prof2_self",
-      PROF_3="rep_prof3_self",PROF_4="rep_prof4_self",
-      ICS_1="rep_ics1_self", ICS_2="rep_ics2_self", ICS_3="rep_ics3_self"
+      "PC_1" = "rep_pc1_self",
+      "PC_2" = "rep_pc2_self",
+      "PC_3" = "rep_pc3_self",
+      "PC_4" = "rep_pc4_self",
+      "PC_5" = "rep_pc5_self",
+      "PC_6" = "rep_pc6_self",
+      "MK_1" = "rep_mk1_self",
+      "MK_2" = "rep_mk2_self",
+      "MK_3" = "rep_mk3_self",
+      "SBP_1" = "rep_sbp1_self",
+      "SBP_2" = "rep_sbp2_self",
+      "SBP_3" = "rep_sbp3_self",
+      "PBLI_1" = "rep_pbl1_self",
+      "PBLI_2" = "rep_pbl2_self",
+      "PROF_1" = "rep_prof1_self",
+      "PROF_2" = "rep_prof2_self",
+      "PROF_3" = "rep_prof3_self",
+      "PROF_4" = "rep_prof4_self",
+      "ICS_1" = "rep_ics1_self",
+      "ICS_2" = "rep_ics2_self",
+      "ICS_3" = "rep_ics3_self"
     )
-    payload <- list()
-    for(key in names(raw_sel)){
-      fld      <- mile_key2field[[key]]
-      desc_fld <- paste0(fld,"_desc")
-      payload[[fld]]      <- raw_sel[[key]]
-      payload[[desc_fld]] <- raw_desc[[key]] %||% ""
+
+    # List of fields that have description fields in REDCap
+    desc_enabled_fields <- c(
+      "PC_1", "PC_2", "PC_3", "PC_6",
+      "PBLI_1", "PBLI_2",
+      "PROF_1", "PROF_2", "PROF_3", "PROF_4",
+      "ICS_1", "ICS_2", "ICS_3"
+    )
+
+    # Period mapping based on your dropdown values
+    period_mapping <- c(
+      "Entering Residency" = "7",
+      "Mid Intern" = "1",
+      "End Intern" = "2",
+      "Mid PGY2" = "3",
+      "End PGY2" = "4",
+      "Mid PGY3" = "5",
+      "Graduating" = "6"
+    )
+
+    record_id <- as.character(resident_data$record_id[resident_data$name == resident_info()][1])
+    validate(need(!is.null(record_id) && length(record_id) > 0, "No record_id found!"))
+
+    # Create a direct submission dataframe (similar to your other app)
+    submission_data <- data.frame(
+      record_id = record_id,
+      redcap_repeat_instrument = "milestone_selfevaluation_c33c",
+      prog_mile_date_self = as.character(Sys.Date()),
+      prog_mile_period_self = period_mapping[selected_period()]
+    )
+
+    # Add milestone scores from raw_sel
+    for(key in names(raw_sel)) {
+      field_name <- mile_key2field[[key]]
+      if (!is.null(field_name)) {
+        submission_data[[field_name]] <- as.numeric(raw_sel[[key]])
+
+        # Add description if it exists and is enabled
+        if (key %in% desc_enabled_fields &&
+            !is.null(raw_desc[[key]]) &&
+            nzchar(trimws(raw_desc[[key]]))) {
+          desc_field <- paste0(field_name, "_desc")
+          submission_data[[desc_field]] <- as.character(raw_desc[[key]])
+        }
+      }
     }
-    payload[["prog_mile_date_self"]]   <- as.character(Sys.Date())
-    payload[["prog_mile_period_self"]] <- as.character(get_ccc_session(selected_period()))
 
-    handle_s_eval_submission(
-      fields_to_collect = names(payload),
-      record_id         = fetch_record_id(resident_info(),resident_data,url,rdm_token),
-      values            = payload
+    # Generate new instance or get existing one
+    instance_number <- generate_new_instance(
+      record_id = record_id,
+      instrument_name = "milestone_selfevaluation_c33c",
+      coach_data = miles,
+      redcap_uri = url,
+      token = rdm_token
     )
 
-    showNotification("Milestone self-evaluation saved!", type="message")
-    if (selected_period()=="Entering Residency"){
-      transition("section5_card","completion_card")
+    # Set the instance number
+    submission_data$redcap_repeat_instance <- as.numeric(instance_number)
+
+    # Ensure rownames don't get included
+    rownames(submission_data) <- NULL
+
+    # Submit the data
+    submission_response <- direct_redcap_import(
+      data = submission_data,
+      record_id = record_id,
+      url = url,
+      token = rdm_token
+    )
+
+    if (!submission_response$success) {
+      showNotification(paste("Save failed:", submission_response$outcome_message), type = "error", duration = NULL)
+      return()
     } else {
-      transition("section5_card","section6_card")
+      showNotification("Milestone self-evaluation saved!", type = "message", duration = 5)
+      if (selected_period() == "Entering Residency"){
+        transition("section5_card", "completion_card")
+      } else {
+        transition("section5_card", "section6_card")
+      }
     }
-
   })
 
 }

@@ -1,4 +1,4 @@
-# Helper functions for UI rendering
+Helper functions for UI rendering
 #
 #
 # ── Helper field sets ─────────────────────────────────────────────
@@ -95,7 +95,13 @@ safe_conditional_panel <- function(condition, content) {
   })
 }
 
-
+# Find option code by display value
+find_option_code <- function(choices, display_value) {
+  if (is.null(choices) || length(choices) == 0) return(NULL)
+  idx <- which(choices == display_value)
+  if (length(idx) == 0) return(NULL)
+  names(choices)[idx[1]]
+}
 
 # ─── UI Renderers for Entering Residency ───────────────────────────
 
@@ -992,7 +998,27 @@ handle_s_eval_submission <- function(fields_to_collect, record_id) {
   TRUE
 }
 
+#' Mark s_eval complete
+#'
+#' @param record_id The REDCap record_id
+mark_self_assess_complete <- function(record_id) {
+  tryCatch({
+    comp <- submit_to_redcap(
+      data.frame(record_id = record_id, self_assess_complete = 1,
+                 stringsAsFactors = FALSE),
+      record_id, url, rdm_token
+    )
+    if (!isTRUE(comp$success)) {
+      showNotification(paste("Failed to mark complete:", comp$outcome_message),
+                       type="error")
+    }
+  }, error = function(e) {
+    message("mark_self_assess_complete error: ", e$message)
+    showNotification("Could not set complete flag.", type="error")
+  })
+}
 
+# Add these to helpers.R
 
 # Process form inputs for REDCap submission
 process_form_inputs <- function(inputs, valid_fields, checkbox_fields = NULL, checkbox_options = NULL) {
@@ -1374,7 +1400,68 @@ direct_redcap_import <- function(data, record_id, url, token) {
   }
 }
 
+# Function to submit resident_data (non-repeating form)
+submit_resident_data <- function(record_id, data, url, token) {
+  # Ensure record_id is in the data
+  if (!"record_id" %in% names(data)) {
+    message("Adding record_id to data")
+    data$record_id <- record_id
+  }
 
+  # For non-repeating forms, REMOVE these fields if they exist
+  data$redcap_repeat_instrument <- NULL
+  data$redcap_repeat_instance <- NULL
+
+  # Ensure all data is character type for REDCap
+  data <- as.data.frame(data, stringsAsFactors = FALSE)
+  for (col in names(data)) {
+    data[[col]] <- as.character(data[[col]])
+  }
+
+  # Convert data frame to JSON
+  data_json <- jsonlite::toJSON(data, auto_unbox = TRUE)
+
+  # Log the data being sent to REDCap for debugging
+  message("Sending resident_data to REDCap:")
+  print(data)
+
+  # Submit to REDCap API
+  response <- httr::POST(
+    url = url,
+    body = list(
+      token = token,
+      content = "record",
+      action = "import",
+      format = "json",
+      type = "flat",
+      overwriteBehavior = "normal",
+      forceAutoNumber = "false",
+      data = data_json,
+      returnContent = "count",
+      returnFormat = "json"
+    ),
+    encode = "form"
+  )
+
+  # Check response
+  if (httr::status_code(response) == 200) {
+    response_content <- httr::content(response, "text", encoding = "UTF-8")
+    message("REDCap API response: ", response_content)
+
+    return(list(
+      success = TRUE,
+      outcome_message = paste("Successfully submitted resident data for record", record_id)
+    ))
+  } else {
+    error_message <- httr::content(response, "text", encoding = "UTF-8")
+    message("Error submitting to REDCap: ", error_message)
+
+    return(list(
+      success = FALSE,
+      outcome_message = paste("Failed to submit resident data for record", record_id, ":", error_message)
+    ))
+  }
+}
 
 
 
@@ -2006,6 +2093,23 @@ generate_instance_2 <- function(record_id, instrument_name, coach_data = NULL,
   }
 }
 
+submit_milestone_data <- function(record_id, instrument, period, data, url, token) {
+  # Create a copy of the data to prevent side effects
+  milestone_data <- as.data.frame(data, stringsAsFactors = FALSE)
+
+  # Reset row names to prevent the _row issue
+  rownames(milestone_data) <- NULL
+
+  # Now call the standard function with our cleaned data
+  return(submit_to_redcap_with_period_check(
+    record_id = record_id,
+    instrument = instrument,
+    period_text = period,
+    data = milestone_data,
+    url = url,
+    token = token
+  ))
+}
 
 # Function to get the previous period based on current selection
 get_previous_period <- function(current_period) {

@@ -39,18 +39,26 @@ server <- function(input, output, session) {
   )
 
 
-  # ── Access code logic ─────────────────────────────────────────────
+  # Your existing access_code reactive
   access_code <- reactive({
     query <- parseQueryString(session$clientData$url_search)
     if (!is.null(query$code) && nzchar(query$code)) trimws(query$code)
     else trimws(input$access_code_input)
   })
 
-  output$valid_code <- reactive({
-    req(access_code())                # make sure we have *something*
-    access_code() %in% resident_data$access_code
+  # Handle the submit button click
+  observeEvent(input$validate_code, {
+    req(access_code())
+    is_valid <- access_code() %in% resident_data$access_code
+    if(is_valid) {
+      shinyjs::hide("access_code_screen")
+      shinyjs::show("main_app_content")
+    } else {
+      # Update validation state
+      updateTextInput(session, "is_valid_code", value = FALSE)
+    }
   })
-  outputOptions(output, "valid_code", suspendWhenHidden = FALSE)
+
 
   resident_info <- reactive({
     req(access_code())
@@ -66,11 +74,12 @@ server <- function(input, output, session) {
     df$coach[1]
   })
 
-  output$resident_name <- renderText({ req(resident_info()); paste("Dashboard for:", resident_info()) })
+  output$resident_name <- renderText({ req(resident_info()); paste("Self Evaluation for:", resident_info()) })
   output$coach_name <- renderText({ req(coach_info()); paste("Coach is Dr:", coach_info()) })
 
   # ── Period Selection ───────────────────────────────────────────────
   selected_period <- mod_miles_select_server("period_select")
+
 
   responses <- reactiveValues()
 
@@ -110,7 +119,12 @@ server <- function(input, output, session) {
     ))
   }
 
-  rv <- reactiveValues()
+  rv <- reactiveValues(
+    flow_path = NULL,
+    other_value = 0,
+    # ... other reactive values
+    current_milestone_data = NULL
+  )
 
 
   # Main function to render the card based on period
@@ -262,26 +276,43 @@ server <- function(input, output, session) {
   observeEvent(input$reopen_modal, { req(resident_info()); showEvaluationModal() })
 
   # ── Navigation flow logic ─────────────────────────────────────────────
+  # Consolidated period selection and navigation handler
   observeEvent(input$period_next, {
     req(selected_period())
 
-    # Reset all cards
+    # Hide both period selection and help text
+    shinyjs::hide("period_selection_card")
+    shinyjs::hide("period_help_text")
+
+    # Reset all cards before showing the next one
     purrr::walk(
-      c("intro_card","section1_card","section2_card","section3_card",
-        "section4_card","section5_card","section6_card","completion_card"),
+      c("intro_card", "section1_card", "section2_card", "section3_card",
+        "section4_card", "section5_card", "section6_card", "completion_card"),
       shinyjs::hide
     )
 
+    # Set flow path and transition to appropriate card
     if (selected_period() == "Entering Residency") {
-      # For Entering Residency: show intro, card 2, and card 5 only
-      transition("period_selection_card", "intro_card")
-      # Store the flow path for later navigation
       rv$flow_path <- "entering_residency"
+      transition("period_selection_card", "intro_card")
     } else {
-      # For all other periods: show cards 1-6 (no intro)
-      transition("period_selection_card", "section1_card")
       rv$flow_path <- "standard"
+      transition("period_selection_card", "section1_card")
     }
+  })
+
+  # Add this observer for the intro_next button (place it near your other observeEvent handlers)
+  observeEvent(input$intro_next, {
+    # Check that Missouri education questions are answered
+    req(input$hs_mo, input$college_mo, input$med_mo)
+
+    # Store responses in the reactiveValues object
+    responses$hs_mo <- input$hs_mo
+    responses$college_mo <- input$college_mo
+    responses$med_mo <- input$med_mo
+
+    # Move to section 2 (since this is entering residency flow)
+    transition("intro_card", "section2_card")
   })
 
   observeEvent(input$section1_next, {
@@ -438,6 +469,86 @@ server <- function(input, output, session) {
 
   ## Card 5 - Milestone Self assessment:
 
+  observe({
+    req(selected_period(), resident_info())
+
+    # Get the previous period for the current selection
+    prev_period <- get_previous_period(selected_period())
+
+    # Only attempt to load previous data if a previous period exists
+    if (!is.na(prev_period)) {
+      # Debug logging
+      message(paste("Loading milestone data for previous period:", prev_period))
+
+    }
+  })
+
+  # 2. Render the previous self-assessment plot
+  output$previous_self_plot <- renderPlot({
+    req(selected_period(), resident_info())
+
+    # Get the previous period
+    prev_period <- get_previous_period(selected_period())
+
+    # Only attempt to render if previous period exists
+    if (!is.na(prev_period)) {
+      tryCatch({
+        miles_plot(s_miles, resident_info(), prev_period)
+      }, error = function(e) {
+        message(paste("Error rendering previous self plot:", e$message))
+        ggplot() +
+          annotate("text", x = 0.5, y = 0.5,
+                   label = "No previous self-assessment data available",
+                   color = "darkgray", size = 5) +
+          theme_void()
+      })
+    } else {
+      # Create an empty plot for first-time assessments
+      ggplot() +
+        annotate("text", x = 0.5, y = 0.5,
+                 label = "No previous assessment period",
+                 color = "darkgray", size = 5) +
+        theme_void()
+    }
+  })
+
+  # 3. Render the previous program assessment plot
+  output$previous_program_plot <- renderPlot({
+    req(selected_period(), resident_info())
+
+    # Get the previous period
+    prev_period <- get_previous_period(selected_period())
+
+    # Only attempt to render if previous period exists and should have program data
+    if (!is.na(prev_period) && has_program_data(prev_period)) {
+      tryCatch({
+        miles_plot(p_miles, resident_info(), prev_period)
+      }, error = function(e) {
+        message(paste("Error rendering previous program plot:", e$message))
+        ggplot() +
+          annotate("text", x = 0.5, y = 0.5,
+                   label = "No previous program assessment data available",
+                   color = "darkgray", size = 5) +
+          theme_void()
+      })
+    } else {
+      # Create an empty plot when no previous program data exists or is expected
+      reason <- if(is.na(prev_period)) {
+        "No previous assessment period"
+      } else {
+        "No program assessment for this period"
+      }
+
+      ggplot() +
+        annotate("text", x = 0.5, y = 0.5,
+                 label = reason,
+                 color = "darkgray", size = 5) +
+        theme_void()
+    }
+  })
+
+
+
   output$mainImage <- renderImage({
     req(currentImageFile())
 
@@ -563,6 +674,13 @@ server <- function(input, output, session) {
       token = rdm_token
     )
 
+    # Process the current milestone data for visualization in Card 6
+    rv$current_milestone_data <- process_current_milestone(
+      miles_mod,
+      resident_info(),
+      selected_period()
+    )
+
     if (!submission_response$success) {
       showNotification(paste("Save failed:", submission_response$outcome_message), type = "error", duration = NULL)
       return()
@@ -574,6 +692,43 @@ server <- function(input, output, session) {
         transition("section5_card", "section6_card")
       }
     }
+  })
+
+  # Render the current milestone plot
+  output$current_milestone_plot <- renderPlot({
+    req(rv$current_milestone_data, selected_period())
+
+    # Get median data for comparison
+    median_data <- get_median_data(s_miles, selected_period())
+
+    # Prepare the plot data
+    plot_data <- prepare_milestone_plot_data(rv$current_milestone_data, median_data)
+
+    # Check if we have valid data to plot
+    if (nrow(plot_data) == 0) {
+      return(
+        ggplot() +
+          annotate("text", x = 0.5, y = 0.5,
+                   label = "No milestone data available",
+                   color = "red", size = 5) +
+          theme_void()
+      )
+    }
+
+    # Use the miles_plot function with the prepared data
+    tryCatch({
+      # Call miles_plot with the prepared dataset
+      miles_plot(plot_data, resident_info(), selected_period())
+    }, error = function(e) {
+      message(paste("Error rendering current milestone plot:", e$message))
+
+      # Return an error plot
+      ggplot() +
+        annotate("text", x = 0.5, y = 0.5,
+                 label = paste("Error:", e$message),
+                 color = "red", size = 4) +
+        theme_void()
+    })
   })
 
 }

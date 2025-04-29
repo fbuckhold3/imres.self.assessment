@@ -1,27 +1,58 @@
 ui <- fluidPage(
   theme = bs_theme(version = 5),
   useShinyjs(),
-  tags$style(HTML(
-    ".hidden-card { display: none; }"
-  )),
+  tags$style(HTML("
+  .hidden-card { display: none; }
+  .center-screen {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    width: 80%;
+    max-width: 500px;
+  }
+  .access-code-container {
+    padding: 2rem;
+    border-radius: 8px;
+    background: white;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  /* Hide the validation input */
+  #is_valid_code { display: none; }
+")),
 
-  # always show this
+  # Add this somewhere in your UI, probably near the top
   div(
-    class = "initial-screen text-center mt-5",
-    h1("IMSLU Resident Self-Assessment Form"),
-    p("Please enter your unique access code to start"),
-    textInput("access_code_input","Access Code:",placeholder="ABC123")
+    class = "hidden-card",
+    textInput("is_valid_code", label = NULL, value = FALSE)
   ),
 
-  # show an error message *once* they type something invalid
-  conditionalPanel(
-    condition = "input.access_code_input && !output.valid_code",
-    p("❌ Invalid access code, try again", style="color:red;")
+  # Initial access code screen
+  div(
+    id = "access_code_screen",
+    class = "center-screen",
+    div(
+      class = "access-code-container",
+      h1("IMSLU Resident Self-Assessment Form", class = "mb-4"),
+      div(
+        class = "mb-3",
+        textInput("access_code_input", "Access Code:", placeholder = "ABC123")
+      ),
+      div(
+        class = "mb-3",
+        actionButton("validate_code", "Submit", class = "btn-primary")
+      ),
+      conditionalPanel(
+        condition = "input.access_code_input && !input.is_valid_code",
+        p("❌ Invalid access code, try again", style = "color:red;")
+      )
+    )
   ),
 
-  # everything else only shows when code is valid
-  conditionalPanel(
-    condition = "output.valid_code",
+  div(
+    id = "main_app_content",
+    style = "display: none;",
     div(
       class = "container mt-4",
       # Header: resident & coach
@@ -31,43 +62,37 @@ ui <- fluidPage(
         div(
           style = "display: flex; justify-content: space-between; align-items: center;",
           h3(textOutput("resident_name"), style = "margin: 0; font-weight: bold;"),
-          h4(textOutput("coach_name"),    style = "margin: 0; font-weight: normal;")
+          h4(textOutput("coach_name"), style = "margin: 0; font-weight: normal;")
         )
       ),
 
-      # Explanatory text for period selection (disappears after selection)
-      conditionalPanel(
-        condition = "!input.period_select",
-        div(
-          class = "period-help text-center mb-3",
-          p(
-            "To complete this self-assessment, please select the period to review. ",
-            "This should reflect your current year, and the time - if doing in the Fall/Winter, pick 'mid', ",
-            "if in the Spring pick 'end' or 'graduating'. Incoming interns - do 'Entering Residency'. ",
-            "You're smart, you can figure it out."
-          )
-        )
-      ),
-
-      # Period Selection Card
+      # Add this period selection card
       div(
         id = "period_selection_card",
         card(
           card_header("Select Assessment Period"),
           card_body(
-            mod_miles_select_ui("period_select"),
+            mod_miles_select_ui("period_select"),  # This is your period selection module
             div(
               style = "display:flex;justify-content:space-between;",
-              actionButton("period_next",        "Begin Assessment", class = "btn-primary"),
-              div(
-                id    = "custom_period_next_container",
-                style = "display:none;",
-                actionButton("custom_period_next","Begin Assessment", class = "btn-primary")
-              )
+              actionButton("period_next", "Begin Assessment", class = "btn-primary")
             )
           )
         )
       ),
+
+      # Period selection help text
+      div(
+        id = "period_help_text",
+        class = "period-help text-center mb-3",
+        p(
+          "To complete this self-assessment, please select the period to review. ",
+          "This should reflect your current year, and the time - if doing in the Fall/Winter, pick 'mid', ",
+          "if in the Spring pick 'end' or 'graduating'. Incoming interns - do 'Entering Residency'. ",
+          "You're smart, you can figure it out."
+        )
+      ),
+
 
       # Intro Card
       div(
@@ -213,26 +238,106 @@ ui <- fluidPage(
         )
       ),
 
+      # _____ Card 5: Milestone self_assessment
       div(
-        id = "section5_card", style = "display: none;",
-          card(
-            card_header("Milestone Self-Assessment"),
-            card_body(
-              uiOutput("milestone_module_ui")
-            )
+        id = "section5_card",
+        style = "display: none;",
+        card(
+          card_header("Milestone Self-Assessment"),
+          card_body(
+            # Previous milestone visualization section
+            div(
+              id = "previous_milestones_section",
+              conditionalPanel(
+                condition = "input.show_prev_milestones",
+                h3("Previous Milestone Assessments", class = "mb-3"),
+                p("These charts show your previous self-assessment (left) and the Clinical Competency Committee's ratings (right) from your previous evaluation period, if available."),
+                fluidRow(
+                  column(
+                    width = 6,
+                    div(
+                      class = "self-assessment",
+                      h4("Your Previous Self-Assessment"),
+                      plotOutput("previous_self_plot", height = "400px")
+                    )
+                  ),
+                  column(
+                    width = 6,
+                    div(
+                      class = "program-assessment",
+                      h4("Previous Program Assessment"),
+                      plotOutput("previous_program_plot", height = "400px")
+                    )
+                  )
+                )
+              ),
+              checkboxInput("show_prev_milestones", "Show Previous Milestone Assessments", value = TRUE)
+            ),
+
+            hr(),
+
+            # Current milestone assessment module
+            h3("Current Milestone Self-Assessment", class = "mb-3"),
+            uiOutput("milestone_module_ui")
           )
+        )
       ),
 
       # Card 6: Goals & submission
       div(
-        id = "section6_card", class = "hidden-card",
+        id = "section6_card",
+        class = "hidden-card",
         card(
-          card_header("6. Review and Implement New Goals"),
+          card_header("Review and Implement New Goals"),
           card_body(
-            textAreaInput("goal1", "Goal 1:", rows = 2), dateInput("goal1_deadline", "Deadline for Goal 1:"),
-            textAreaInput("goal2", "Goal 2:", rows = 2), dateInput("goal2_deadline", "Deadline for Goal 2:"),
-            textAreaInput("goal3", "Goal 3:", rows = 2), dateInput("goal3_deadline", "Deadline for Goal 3:"),
-            actionButton("submit", "Submit Self-Assessment", class = "btn-success")
+            fluidRow(
+              # Left column (4/12) - Milestone Visualization
+              column(
+                width = 4,
+                div(
+                  class = "milestone-visualization p-2",
+                  h4("Your Current Milestone Assessment", class = "mb-3"),
+                  plotOutput("current_milestone_plot", height = "380px")
+                )
+              ),
+
+              # Right column (8/12) - Goal Setting Placeholder
+              column(
+                width = 8,
+                div(
+                  class = "goal-setting p-2",
+                  h4("Set Development Goals", class = "mb-3"),
+                  p("Based on your milestone assessment, set three goals to focus on for the upcoming period."),
+
+                  # Goal 1
+                  div(
+                    class = "mb-3",
+                    textAreaInput("goal1", "Goal 1:", rows = 2, width = "100%"),
+                    dateInput("goal1_deadline", "Deadline for Goal 1:", width = "50%")
+                  ),
+
+                  # Goal 2
+                  div(
+                    class = "mb-3",
+                    textAreaInput("goal2", "Goal 2:", rows = 2, width = "100%"),
+                    dateInput("goal2_deadline", "Deadline for Goal 2:", width = "50%")
+                  ),
+
+                  # Goal 3
+                  div(
+                    class = "mb-3",
+                    textAreaInput("goal3", "Goal 3:", rows = 2, width = "100%"),
+                    dateInput("goal3_deadline", "Deadline for Goal 3:", width = "50%")
+                  ),
+
+                  # Submit button
+                  div(
+                    class = "text-center mt-4",
+                    actionButton("submit", "Submit Self-Assessment", class = "btn-success btn-lg")
+                  )
+                )
+              )
+            )
           )
         )
       ),

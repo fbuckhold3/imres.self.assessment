@@ -761,7 +761,7 @@
         "forcats",
         "ggplot2"
       ],
-      "Hash": "5c884fdb98bed4d1b765c9debc92ac9e"
+      "Hash": "4c1b4cea4250c2e96133183f6cfec96f"
     },
     "gh": {
       "Package": "gh",
@@ -931,9 +931,10 @@
       "Source": "GitHub",
       "RemoteType": "github",
       "RemoteHost": "api.github.com",
-      "RemoteRepo": "imres",
       "RemoteUsername": "fbuckhold3",
-      "RemoteSha": "151d69976c985f7ec459cef8344e62582a2237e8",
+      "RemoteRepo": "imres",
+      "RemoteRef": "main",
+      "RemoteSha": "722178849552d7409aeb43652152db1b72540c39",
       "Requirements": [
         "DT",
         "REDCapR",
@@ -954,7 +955,7 @@
         "tidyr",
         "usethis"
       ],
-      "Hash": "01f0b529f7225857fb844c2e3a919ff0"
+      "Hash": "9b9a1e2ef65cf5a08a6ee3ff88561fe4"
     },
     "ini": {
       "Package": "ini",

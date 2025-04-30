@@ -2749,3 +2749,93 @@ update_goal_dropdown <- function(session, input_id, rdm_dict_data, field_name_pa
   }
 }
 
+get_milestone_data <- function(rdm_dict_data, subcomp_code) {
+  req(rdm_dict_data, subcomp_code)
+
+  # Extract competency type and number
+  comp_match <- regexec("^([A-Z]+)(\\d+)$", subcomp_code)
+  comp_type <- regmatches(subcomp_code, comp_match)[[1]][2]
+  comp_num <- regmatches(subcomp_code, comp_match)[[1]][3]
+
+  # Create pattern based on competency type
+  pattern <- NULL
+  if(comp_type == "PC") {
+    pattern <- paste0("^pc", comp_num, "_r\\d+$")
+  } else if(comp_type == "MK") {
+    pattern <- paste0("^mk", comp_num, "_r\\d+$")
+  } else if(comp_type == "SBP") {
+    pattern <- paste0("^sbp", comp_num, "_r\\d+$")
+  } else if(comp_type == "PBLI") {
+    # For PBLI, field names use "pbl" instead of "pbli"
+    pattern <- paste0("^pbl", comp_num, "_r\\d+$")
+  } else if(comp_type == "PROF") {
+    pattern <- paste0("^prof", comp_num, "_r\\d+$")
+  } else if(comp_type == "ICS") {
+    pattern <- paste0("^ics", comp_num, "_r\\d+$")
+  } else {
+    return(NULL)
+  }
+
+  # Find all fields related to this subcompetency
+  milestone_fields <- rdm_dict_data %>%
+    filter(
+      grepl(pattern, field_name, ignore.case = TRUE)
+    ) %>%
+    arrange(field_name)  # Sort by field name to maintain row order
+
+  # If no milestone fields found, return NULL
+  if(nrow(milestone_fields) == 0) {
+    print(paste("No milestone fields found for pattern:", pattern))
+    return(NULL)
+  }
+
+  # Process each milestone field to extract the 5 levels
+  milestone_rows <- lapply(1:nrow(milestone_fields), function(i) {
+    field <- milestone_fields[i, ]
+
+    # Extract the row label/name (often in field_label)
+    row_label <- field$field_label
+    if(is.na(row_label) || row_label == "") {
+      # Use field name as fallback
+      row_label <- field$field_name
+    }
+
+    # Parse the milestone levels (format: "1, Description | 2, Description | ...")
+    choices_text <- field$select_choices_or_calculations
+    if(is.na(choices_text) || choices_text == "") {
+      # No data available
+      return(c(row_label, rep("", 5)))
+    }
+
+    # Split by pipe and extract descriptions
+    levels <- strsplit(choices_text, " \\| ")[[1]]
+
+    # Create a vector with 5 empty strings
+    level_descriptions <- rep("", 5)
+
+    # Fill in the descriptions for the available levels
+    for(level_text in levels) {
+      parts <- strsplit(level_text, ", ")[[1]]
+      if(length(parts) > 1) {
+        level_num <- as.numeric(parts[1])
+        if(!is.na(level_num) && level_num >= 1 && level_num <= 5) {
+          # Add the description for this level
+          level_descriptions[level_num] <- paste(parts[-1], collapse = ", ")
+        }
+      }
+    }
+
+    # Return row label and level descriptions
+    c(row_label, level_descriptions)
+  })
+
+  # Convert to data frame
+  milestone_df <- do.call(rbind, milestone_rows)
+
+  # Add column names
+  colnames(milestone_df) <- c("Milestone", "Level 1", "Level 2", "Level 3", "Level 4", "Level 5")
+
+  return(as.data.frame(milestone_df))
+}
+
+

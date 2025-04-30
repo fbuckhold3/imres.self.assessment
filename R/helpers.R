@@ -122,7 +122,7 @@ render_faculty_block <- function(ent) {
 # Goals block
 render_goals_block <- function(ent) {
   tagList(
-    tags$h3("Top 3 Goals for First 6 Months"),
+    tags$h3("Top 3 Goals for First 6 Months - please take a few moments to outline a few goals you have entering residency"),
     textAreaInput("s_e_ume_goal1", get_label("s_e_ume_goal1", ent), rows = 2),
     textAreaInput("s_e_ume_goal2", get_label("s_e_ume_goal2", ent), rows = 2),
     textAreaInput("s_e_ume_goal3", get_label("s_e_ume_goal3", ent), rows = 2)
@@ -165,7 +165,7 @@ render_topic_block <- function(ent) {
     tags$h3("Core Learning Topics"),
     tags$div(
       tags$label(get_label("s_e_topic_sel", ent)),
-      tags$p(class="help-block", "Please select up to 3 topics"),
+      tags$p(class="help-block", "The following are a number of core internal medicine topics; please select the top 3 which you feel least confident about in your practice? (Select three)"),
       checkboxGroupInput(
         "s_e_topic_sel",
         NULL, # Label already added above
@@ -249,7 +249,7 @@ render_career_block <- function(ent) {
   )
 
   tagList(
-    tags$h3("Career Plans"),
+    tags$h3("What types of paths are you considering in your career. You may select multiple"),
     safe_checkbox_group(
       "s_e_career_path",
       get_label("s_e_career_path", ent),
@@ -315,7 +315,7 @@ render_fellowship_block <- function(ent) {
     safe_conditional_panel(
       "Array.isArray(input['s_e_career_path']) && input['s_e_career_path'].indexOf('2') >= 0",
       tagList(
-        tags$h3("Fellowship Interest"),
+        tags$h3("What fellowships are you interested in?"),
         safe_checkbox_group(
           "s_e_fellow",
           get_label("s_e_fellow", ent),
@@ -520,45 +520,162 @@ render_graduation_block <- function(grad) {
 render_card2_ui <- function(period, rdm_dict, entering_fields, graduating_fields, other_fields) {
   if (period == "Entering Residency") {
     ent <- rdm_dict %>% filter(form_name == "s_eval", field_name %in% entering_fields)
-    return(tagList(
-      render_faculty_block(ent), tags$hr(),
-      render_goals_block(ent), tags$hr(),
-      render_prep_table(ent), tags$hr(),
-      render_topic_block(ent), tags$hr(),
-      render_career_block(ent), tags$hr(),
-      render_fellowship_block(ent), tags$hr(),
-      render_track_block(ent)
+    # Define the subpages
+    subpages <- list(
+      list(
+        title = "Career Planning and Mentorship",
+        description = "This section focuses on your career goals, mentorship needs, and program involvement.",
+        content = tagList(
+          div(
+            class = "section-container",
+            div(
+              class = "section-header",
+              h4("Faculty Mentorship and Career Goals"),
+              p("Your responses here help us match you with faculty mentors and track your professional development.")
+            ),
+            div(
+              class = "question-group",
+              render_faculty_block(ent)
+            ),
+            tags$hr(),
+            div(
+              class = "section-header mt-4",
+              h4("Goals and Career Planning"),
+              p("Setting clear goals helps guide your residency experience and future career path.")
+            ),
+            div(
+              class = "question-group",
+              render_goals_block(ent)
+            ),
+            div(
+              class = "question-group",
+              render_career_block(ent)
+            ),
+            div(
+              class = "question-group",
+              render_fellowship_block(ent)
+            ),
+            div(
+              class = "question-group",
+              render_track_block(ent)
+            )
+          )
+        )
+      ),
+      list(
+        title = "Clinical Preparedness and Learning Preferences",
+        description = "Help us understand your comfort level with various clinical scenarios and preferred learning methods.",
+        content = tagList(
+          div(
+            class = "section-container",
+            div(
+              class = "section-header",
+              h4("Clinical Preparedness Assessment"),
+              p("Rate your comfort level with various clinical scenarios to help us tailor your learning experience.")
+            ),
+            div(
+              class = "question-group",
+              render_prep_table(ent)
+            ),
+            tags$hr(),
+            div(
+              class = "section-header mt-4",
+              h4("Learning Topics and Preferences"),
+              p("Your input helps us customize educational content to your needs and learning style.")
+            ),
+            div(
+              class = "question-group",
+              render_topic_block(ent)
+            )
+          )
+        )
+      )
+    )
+    return(subpages)
+  } else if (period == "Graduating") {
+    return(list(
+      list(
+        title = "Graduation Planning",
+        description = "Help us understand your post-graduation plans and maintain contact.",
+        content = tagList(
+          div(
+            class = "section-container",
+            div(
+              class = "question-group",
+              render_next_steps_block(rdm_dict, graduating_fields)
+            ),
+            tags$hr(),
+            div(
+              class = "question-group",
+              render_contact_block(rdm_dict)
+            )
+          )
+        )
+      )
     ))
-  }
-  else if (period == "Graduating") {
-    # Remove board-related fields from graduating_fields if needed
-    graduating_fields <- graduating_fields[!graduating_fields %in%
-                                             c("s_e_board_concern", "s_e_board_help", "s_e_board_discu")]
-
-    grad <- rdm_dict %>% filter(form_name == "s_eval", field_name %in% graduating_fields)
-    return(tagList(
-      render_graduation_block(grad), tags$hr(),
-      render_next_steps_block(grad), tags$hr(),
-      render_fellowship_plans_block(grad), tags$hr(),
-      render_practice_location_block(grad), tags$hr(),
-      render_contact_block(grad)
-    ))
-  }
-  else {
-    # For all other periods (regular check-ins)
+  } else {
+    # Regular check-ins
     oth <- rdm_dict %>% filter(form_name == "s_eval", field_name %in% other_fields)
-    return(tagList(
-      render_other_topics_block(oth), tags$hr(),
-      render_other_career_block(oth), tags$hr(),
-      render_other_tracks_block(oth), tags$hr(),
-      render_step3_block(oth), tags$hr(),
-      render_other_board_block(oth), tags$hr(),
-      render_mksap_block(oth), tags$hr(),
-      render_discussion_block(oth)
+    return(list(
+      list(
+        title = "Academic Progress",
+        description = "The following are a number of questions about your learning progress in the Program.",
+        content = tagList(
+          div(
+            class = "section-container",
+            div(
+              class = "question-group",
+              render_other_topics_block(oth)
+            ),
+            div(
+              class = "question-group",
+              render_step3_block(oth)
+            ),
+            div(
+              class = "question-group",
+              render_other_board_block(oth)
+            ),
+            div(
+              class = "question-group",
+              render_mksap_block(oth)
+            )
+          )
+        )
+      ),
+      list(
+        title = "Career Development",
+        description = "Review and update your career goals and training track preferences.",
+        content = tagList(
+          div(
+            class = "section-container",
+            div(
+              class = "question-group",
+              render_other_career_block(oth)
+            ),
+            div(
+              class = "question-group",
+              render_other_tracks_block(oth)
+            )
+          )
+        )
+      ),
+      list(
+        title = "Additional Discussion Topics",
+        description = "Share any other topics you'd like to discuss with your mentor.",
+        content = tagList(
+          div(
+            class = "section-container",
+            div(
+              class = "question-group",
+              render_discussion_block(oth)
+            )
+          )
+        )
+      )
     ))
   }
 }
-# ─── UI Renderers for Other Periods ───────────────────────────
+
 
 # Conditional panel with safe fallbacks
 safe_conditional_panel <- function(condition, content) {
@@ -594,7 +711,7 @@ render_other_topics_block <- function(oth) {
     # Core topics selection with 3 max
     tags$div(
       tags$label(get_label("s_e_topic_sel", oth)),
-      tags$p(class="help-block", "Please select exactly 3 topics"),
+      tags$p(class="help-block", "The following are a number of core internal medicine topics; please select the top 3 which you feel least confident about in your practice? (Select three)"),
       checkboxGroupInput(
         "s_e_topic_sel",
         NULL, # Label already added above
@@ -682,7 +799,7 @@ render_other_career_block <- function(oth) {
   if (length(other_career_value) == 0) other_career_value <- "Other" # fallback
 
   tagList(
-    tags$h3("Career Path"),
+    tags$h3("What career(s) aspects of IM are you considering or planning to go into"),
     safe_checkbox_group(
       "s_e_career_path",
       get_label("s_e_career_path", oth),
@@ -745,7 +862,7 @@ render_other_tracks_block <- function(oth) {
     safe_conditional_panel(
       "Array.isArray(input['s_e_career_path']) && input['s_e_career_path'].indexOf('2') >= 0",
       tagList(
-        tags$h3("Fellowship Interest"),
+        tags$h3("What Fellowship(s) are you interested in or planning to go into (may select more than one)"),
         safe_checkbox_group(
           "s_e_fellow",
           get_label("s_e_fellow", oth),
@@ -927,6 +1044,78 @@ render_mksap_block <- function(oth) {
     )
   )
 }
+
+render_card3_ui <- function(rdm_dict) {
+  # Filter dictionary to get fields for this card
+  card_data <- rdm_dict %>% filter(form_name == "s_eval", field_name %in% program_feedback_fields)
+
+  div(
+    class = "section-container",
+    # Title and introduction
+    div(
+      class = "section-header",
+      h3("Program Feedback"),
+      HTML("
+        <p>What are your thoughts about your experiences in the program?
+        <em>Please note, although this is in your self-evaluation, this data will be extracted
+        anonymously and collated for the entire program for the Program Evaluation Committee to review.</em></p>
+      ")
+    ),
+
+    # Positive experiences
+    div(
+      class = "question-group",
+      HTML("<p class='question-header'>Are there certain rotations / conferences / or other experiences that positively contribute to your training?</p>"),
+      textAreaInput(
+        "s_e_prog_plus",
+        NULL,
+        "",
+        width = "100%",
+        height = "150px"
+      )
+    ),
+
+    # Experiences needing improvement
+    div(
+      class = "question-group",
+      HTML("<p class='question-header'>Are there certain rotations / conferences / or other experiences that need improvement?</p>"),
+      textAreaInput(
+        "s_e_prog_delta",
+        NULL,
+        "",
+        width = "100%",
+        height = "150px"
+      )
+    ),
+
+    # Conference and Grand Rounds attendance
+    div(
+      class = "question-group",
+      HTML("<p class='question-header'>Regarding conference and Grand Rounds attendence - in what circumstances is it easy to attend? Hard? What steps would you like to see the program try?</p>"),
+      textAreaInput(
+        "s_e_progconf",
+        NULL,
+        "",
+        width = "100%",
+        height = "150px"
+      )
+    ),
+
+    # Other program feedback
+    div(
+      class = "question-group",
+      HTML("<p class='question-header'>Are there any other systems issues within the program that you want to bring to attention or other feedback for improvement?</p>"),
+      textAreaInput(
+        "s_e_progfeed",
+        NULL,
+        "",
+        width = "100%",
+        height = "150px"
+      )
+    )
+  )
+}
+
 
 
 #' Handle the submission of s_eval fields
@@ -1468,380 +1657,7 @@ render_contact_block <- function(rdm_dict) {
   )
 }
 
-scholarship_module_ui <- function(id){
-  ns <- NS(id)
-  tagList(
-    h3("4. Scholarship & QI Projects"),
-    selectInput(ns("type"), "Project type:",
-                choices = c("",
-                            parse_choices(rdm_dict$select_choices_or_calculations[
-                              rdm_dict$field_name=="schol_type"
-                            ])
-                )
-    ),
-    uiOutput(ns("fields")),        # will render type-specific inputs
-    actionButton(ns("add"),   "Add This Project"),
-    actionButton(ns("next_btn"), "Next Section", class="btn-primary")
-  )
-}
 
-# helpers.R
-
-
-
-#—— Scholarship module server ——#
-scholarship_module_server <- function(id, rdm_dict, record_id) {
-  moduleServer(id, function(input, output, session) {
-    ns <- session$ns
-
-    # Add this to the beginning of your scholarship_module_server function
-    shinyjs::runjs('
-  $(document).ready(function() {
-    console.log("DOM loaded - checking for cards");
-    console.log("section4_card exists:", $("#section4_card").length > 0);
-    console.log("section5_card exists:", $("#section5_card").length > 0);
-  });
-')
-
-    # Render the type‐specific fields UI
-    output$fields <- renderUI({
-      req(input$type)
-      sd <- rdm_dict %>% filter(form_name == "scholarship")
-      ns <- session$ns
-
-      if (input$type == "1") {
-        # Quality Improvement
-        tagList(
-          textAreaInput(ns("schol_qi"),
-                        sd$field_label[sd$field_name == "schol_qi"],
-                        width = "100%", height = "100px"
-          ),
-          textInput(ns("schol_res_mentor"),
-                    sd$field_label[sd$field_name == "schol_res_mentor"],
-                    value = ""
-          ),
-          selectInput(ns("schol_res_status"),
-                      sd$field_label[sd$field_name == "schol_res_status"],
-                      choices = c("", parse_choices(
-                        sd$select_choices_or_calculations[sd$field_name == "schol_res_status"]
-                      )),
-                      selected = ""
-          ),
-          selectInput(ns("schol_div"),
-                      sd$field_label[sd$field_name == "schol_div"],
-                      choices = c("", parse_choices(
-                        sd$select_choices_or_calculations[sd$field_name == "schol_div"]
-                      )),
-                      selected = ""
-          ),
-          radioButtons(ns("schol_pres"),
-                       sd$field_label[sd$field_name == "schol_pres"],
-                       choices = c("Yes", "No"),
-                       selected = character(0),
-                       inline = TRUE
-          ),
-          radioButtons(ns("schol_pub"),
-                       sd$field_label[sd$field_name == "schol_pub"],
-                       choices = c("Yes", "No"),
-                       selected = character(0),
-                       inline = TRUE
-          )
-        )
-
-      } else if (input$type == "2") {
-        # Patient Safety Review
-        tagList(
-          radioButtons(ns("schol_ps"),
-                       sd$field_label[sd$field_name == "schol_ps"],
-                       choices = c("Yes", "No"),
-                       selected = character(0),
-                       inline = TRUE
-          ),
-          radioButtons(ns("schol_rca"),
-                       sd$field_label[sd$field_name == "schol_rca"],
-                       choices = c("Yes", "No"),
-                       selected = character(0),
-                       inline = TRUE
-          )
-        )
-
-      } else if (input$type %in% c("3", "6")) {
-        # Research or Education
-        tagList(
-          textAreaInput(ns("schol_res"),
-                        sd$field_label[sd$field_name == "schol_res"],
-                        width = "100%", height = "100px"
-          ),
-          textInput(ns("schol_res_mentor"),
-                    sd$field_label[sd$field_name == "schol_res_mentor"],
-                    value = ""
-          ),
-          selectInput(ns("schol_res_status"),
-                      sd$field_label[sd$field_name == "schol_res_status"],
-                      choices = c("", parse_choices(
-                        sd$select_choices_or_calculations[sd$field_name == "schol_res_status"]
-                      )),
-                      selected = ""
-          ),
-          selectInput(ns("schol_div"),
-                      sd$field_label[sd$field_name == "schol_div"],
-                      choices = c("", parse_choices(
-                        sd$select_choices_or_calculations[sd$field_name == "schol_div"]
-                      )),
-                      selected = ""
-          ),
-          radioButtons(ns("schol_pres"),
-                       sd$field_label[sd$field_name == "schol_pres"],
-                       choices = c("Yes", "No"),
-                       selected = character(0),
-                       inline = TRUE
-          ),
-          radioButtons(ns("schol_pub"),
-                       sd$field_label[sd$field_name == "schol_pub"],
-                       choices = c("Yes", "No"),
-                       selected = character(0),
-                       inline = TRUE
-          )
-        )
-
-      } else if (input$type %in% c("4", "5")) {
-        # Presentation (4) or Publication (5) only
-        if (input$type == "4") {
-          # Presentation
-          tagList(
-            selectInput(ns("schol_pres_type"),
-                        sd$field_label[sd$field_name == "schol_pres_type"],
-                        choices = c("", parse_choices(
-                          sd$select_choices_or_calculations[sd$field_name == "schol_pres_type"]
-                        )),
-                        selected = ""
-            ),
-            textAreaInput(ns("schol_pres_conf"),
-                          sd$field_label[sd$field_name == "schol_pres_conf"],
-                          width = "100%", height = "50px"
-            ),
-            textAreaInput(ns("schol_cit"),
-                          sd$field_label[sd$field_name == "schol_cit"],
-                          width = "100%", height = "80px"
-            )
-          )
-        } else {
-          # Publication
-          tagList(
-            textAreaInput(ns("schol_cit"),
-                          sd$field_label[sd$field_name == "schol_cit"],
-                          width = "100%", height = "80px"
-            )
-          )
-        }
-
-      } else if (input$type == "7") {
-        # Committee
-        tagList(
-          textAreaInput(ns("schol_comm"),
-                        sd$field_label[sd$field_name == "schol_comm"],
-                        width = "100%", height = "80px"
-          ),
-          selectInput(ns("schol_comm_type"),
-                      sd$field_label[sd$field_name == "schol_comm_type"],
-                      choices = c("", parse_choices(
-                        sd$select_choices_or_calculations[sd$field_name == "schol_comm_type"]
-                      )),
-                      selected = ""
-          ),
-          conditionalPanel(
-            condition = paste0("input['", ns("schol_comm_type"), "']=='5'"),
-            textAreaInput(ns("schol_comm_other"),
-                          sd$field_label[sd$field_name == "schol_comm_other"],
-                          width = "100%", height = "50px"
-            )
-          )
-        )
-
-      } else {
-        NULL
-      }
-    })
-
-    # ─── Inside scholarship_module_server ───
-
-    # Helpers to show the modals:
-    showPresModal <- function() {
-      showModal(modalDialog(
-        title = "Add Presentation",
-        selectInput(ns("p_type"),
-                    "Where presented?",
-                    parse_choices(
-                      rdm_dict$select_choices_or_calculations[
-                        rdm_dict$field_name == "schol_pres_type"
-                      ]
-                    )
-        ),
-        textAreaInput(ns("p_conf"), "Conference / Details"),
-        textAreaInput(ns("p_cit"),  "Full citation"),
-        footer = tagList(
-          modalButton("Cancel"),
-          actionButton(ns("save_pres"), "Save Presentation")
-        ),
-        easyClose = FALSE
-      ))
-    }
-
-    showConfirmPresModal <- function() {
-      showModal(modalDialog(
-        title = "Presentation saved",
-        p("Would you like to add another presentation?"),
-        footer = tagList(
-          modalButton("No"),                # closes dialog
-          actionButton(ns("again_pres"), "Yes")
-        ),
-        easyClose = FALSE
-      ))
-    }
-
-    showPubModal <- function() {
-      showModal(modalDialog(
-        title = "Add Publication",
-        textAreaInput(ns("pub_cit"), "Full citation"),
-        footer = tagList(
-          modalButton("Cancel"),
-          actionButton(ns("save_pub"), "Save Publication")
-        ),
-        easyClose = FALSE
-      ))
-    }
-
-    showConfirmPubModal <- function() {
-      showModal(modalDialog(
-        title = "Publication saved",
-        p("Would you like to add another publication?"),
-        footer = tagList(
-          modalButton("No"),
-          actionButton(ns("again_pub"), "Yes")
-        ),
-        easyClose = FALSE
-      ))
-    }
-
-
-    # When user says “Yes” to schol_pres, show first presentation modal:
-    observeEvent(input$schol_pres, {
-      if (input$schol_pres == "Yes") {
-        showPresModal()
-      }
-    })
-
-    # Save a presentation
-    observeEvent(input$save_pres, {
-      removeModal()
-      handle_scholarship_submission(
-        record_id,
-        list(
-          schol_type = input$type,
-          schol_pres_type = input$p_type,
-          schol_pres_conf = input$p_conf,
-          schol_cit = input$p_cit,
-          schol_pres = 1  # Explicitly set this to 1 (Yes)
-        )
-      )
-      showConfirmPresModal()
-    })
-
-
-    # If they click “Yes” on the confirm, show the presentation modal again
-    observeEvent(input$again_pres, {
-      removeModal()
-      showPresModal()
-    })
-
-
-    # Same flow for publications:
-    observeEvent(input$schol_pub, {
-      if (input$schol_pub == "Yes") {
-        showPubModal()
-      }
-    })
-
-    # Save a publication
-    observeEvent(input$save_pub, {
-      removeModal()
-      handle_scholarship_submission(
-        record_id,
-        list(
-          schol_type = input$type,
-          schol_cit = input$pub_cit,
-          schol_pub = 1  # Explicitly set this to 1 (Yes)
-        )
-      )
-      showConfirmPubModal()
-    })
-
-    observeEvent(input$again_pub, {
-      removeModal()
-      showPubModal()
-    })
-
-    observeEvent(input$add, {
-      vals <- reactiveValuesToList(input)
-
-      ## pick out exactly the REDCap field names you want:
-      keep <- c(
-        "schol_qi",           # QI text
-        "schol_res",          # research/edu description
-        "schol_res_mentor",
-        "schol_res_status",
-        "schol_div",
-        "schol_ps",           # patient safety
-        "schol_rca",
-        "schol_pres",         # Added these Yes/No fields
-        "schol_pub"
-      )
-
-      # Filter only the keys that actually exist in vals
-      keep <- keep[keep %in% names(vals)]
-
-      # Get only the values that exist and ensure they're all vectors
-      project_data <- list()
-      for (k in keep) {
-        if (!is.null(vals[[k]])) {
-          # Convert Yes/No values to numeric
-          if (k %in% c("schol_ps", "schol_rca", "schol_pres", "schol_pub")) {
-            project_data[[k]] <- convert_yes_no(vals[[k]])
-          } else if (is.vector(vals[[k]])) {
-            project_data[[k]] <- vals[[k]]
-          } else {
-            # Convert non-vectors to character strings if possible
-            project_data[[k]] <- as.character(vals[[k]])
-          }
-        }
-      }
-
-      ## put the master dropdown on it too - using the correct field name
-      if (!is.null(input$type)) {
-        project_data$schol_type <- input$type
-      }
-
-      ## Only submit if we have data to submit
-      if (length(project_data) > 0) {
-        ## now submit
-        tryCatch({
-          handle_scholarship_submission(
-            record_id = record_id,
-            values = project_data
-          )
-          showNotification("Project saved", type = "message")
-        }, error = function(e) {
-          showNotification(paste("Error saving project:", e$message), type = "error")
-        })
-      } else {
-        showNotification("No data to save", type = "warning")
-      }
-
-      ## reset the dropdown
-      updateSelectInput(session, "type", selected = "")
-    })
-  })
-}
 
 
 # Helper function to convert Yes/No to numeric values
@@ -2088,3 +1904,104 @@ prepare_milestone_plot_data <- function(current_data, median_data) {
 
   return(plot_data)
 }
+
+
+# Function to process scholarship data
+process_scholarship_data <- function(data, record_id, rdm_dict) {
+  # Filter by record_id
+  filtered_data <- data %>%
+    filter(record_id == record_id)
+
+  # Skip processing if no data is found
+  if (nrow(filtered_data) == 0) {
+    return(list(
+      table_data = data.frame(
+        Scholarship_Type = character(),
+        Description = character(),
+        stringsAsFactors = FALSE
+      ),
+      completed_ps = FALSE,
+      completed_rca = FALSE
+    ))
+  }
+
+  # Get the labels for schol_type from data dictionary
+  schol_type_labels <- rdm_dict %>%
+    filter(field_name == "schol_type") %>%
+    pull(select_choices_or_calculations) %>%
+    strsplit("\\|") %>%
+    unlist() %>%
+    trimws() %>%
+    sapply(function(x) {
+      parts <- strsplit(x, ", ")[[1]]
+      code <- as.numeric(parts[1])
+      label <- parts[2]
+      return(c(code = code, label = label))
+    }) %>%
+    t() %>%
+    as.data.frame(stringsAsFactors = FALSE)
+
+  # Convert codes to numeric for matching
+  schol_type_labels$code <- as.numeric(schol_type_labels$code)
+
+  # Create a new dataframe with the processed data
+  result <- filtered_data %>%
+    mutate(
+      # Map schol_type to labels
+      Scholarship_Type = sapply(schol_type, function(code) {
+        if (is.na(code)) return(NA)
+        label_row <- schol_type_labels[schol_type_labels$code == code, ]
+        if (nrow(label_row) > 0) return(label_row$label[1])
+        return(paste("Type", code))
+      }),
+
+      # Process PS and RCA fields - use vectorized operations
+      PS_Text = ifelse(is.na(schol_ps), NA,
+                       ifelse(schol_ps == 1, "You have completed a Patient Safety Review", NA)),
+
+      RCA_Text = ifelse(is.na(schol_rca), NA,
+                        ifelse(schol_rca == 1, "You have completed a Root Cause Analysis", NA)),
+
+      # Coalesce other fields - need to handle NA values properly
+      Other_Description = pmap_chr(list(schol_qi, schol_res, schol_cit), function(qi, res, cit) {
+        values <- c(qi, res, cit)
+        for (val in values) {
+          if (!is.na(val) && val != "") return(val)
+        }
+        return("")
+      })
+    ) %>%
+    # Combine Description fields
+    mutate(
+      Description = apply(cbind(PS_Text, RCA_Text, Other_Description), 1, function(row) {
+        parts <- row[!is.na(row) & row != ""]
+        if(length(parts) == 0) return("")
+        paste(parts, collapse = " ")
+      })
+    ) %>%
+    # Select only the fields we need
+    select(Scholarship_Type, Description) %>%
+    # Remove rows with NA in Scholarship_Type
+    filter(!is.na(Scholarship_Type))
+
+  # Determine if user has completed Patient Safety Review or Root Cause Analysis
+  completed_ps <- any(!is.na(filtered_data$schol_ps) & filtered_data$schol_ps == 1)
+  completed_rca <- any(!is.na(filtered_data$schol_rca) & filtered_data$schol_rca == 1)
+
+  # Create a clean table without the PS/RCA messages (they'll be shown separately)
+  clean_table <- result %>%
+    mutate(
+      Description = gsub("You have completed a Patient Safety Review", "", Description),
+      Description = gsub("You have completed a Root Cause Analysis", "", Description),
+      Description = trimws(Description)
+    )
+
+  # Return both the processed data and the completion flags
+  return(list(
+    table_data = clean_table,
+    completed_ps = completed_ps,
+    completed_rca = completed_rca
+  ))
+}
+
+

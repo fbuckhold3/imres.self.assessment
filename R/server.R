@@ -77,9 +77,22 @@ server <- function(input, output, session) {
   output$resident_name <- renderText({ req(resident_info()); paste("Self Evaluation for:", resident_info()) })
   output$coach_name <- renderText({ req(coach_info()); paste("Coach is Dr:", coach_info()) })
 
+  # record_id reactive - move this after resident_info is defined
+  record_id <- reactive({
+    req(access_code())
+    df <- resident_data %>% filter(access_code == access_code())
+    if (nrow(df) == 0) return(NULL)
+    df$record_id[1]
+  })
+
+  # Add validation observer - move after record_id reactive
+  observe({
+    req(record_id())
+    validate(need(!is.null(record_id()) && length(record_id()) > 0, "No record_id found!"))
+  })
+
   # ── Period Selection ───────────────────────────────────────────────
   selected_period <- mod_miles_select_server("period_select")
-
 
   responses <- reactiveValues()
 
@@ -126,108 +139,8 @@ server <- function(input, output, session) {
     current_milestone_data = NULL
   )
 
-
-  # Main function to render the card based on period
-  # Ensure render_card2_ui is passing the entire data dictionary
-  render_card2_ui <- function(period, rdm_dict, entering_fields, graduating_fields, other_fields) {
-    if (period == "Entering Residency") {
-      ent <- rdm_dict %>% filter(form_name == "s_eval", field_name %in% entering_fields)
-      return(tagList(
-        render_faculty_block(ent), tags$hr(),
-        render_goals_block(ent), tags$hr(),
-        render_prep_table(ent), tags$hr(),
-        render_topic_block(ent), tags$hr(),
-        render_career_block(ent), tags$hr(),
-        render_fellowship_block(ent), tags$hr(),
-        render_track_block(ent)
-      ))
-    }
-    else if (period == "Graduating") {
-      return(tagList(
-        render_next_steps_block(rdm_dict, graduating_fields),
-        tags$hr(),
-        render_contact_block(rdm_dict)
-      ))
-    }
-    else {
-      # For all other periods (regular check-ins)
-      oth <- rdm_dict %>% filter(form_name == "s_eval", field_name %in% other_fields)
-      return(tagList(
-        render_other_topics_block(oth), tags$hr(),
-        render_other_career_block(oth), tags$hr(),
-        render_other_tracks_block(oth), tags$hr(),
-        render_step3_block(oth), tags$hr(),
-        render_other_board_block(oth), tags$hr(),
-        render_mksap_block(oth), tags$hr(),
-        render_discussion_block(oth)
-      ))
-    }
-  }
-
   # Main render function for Card 3 UI
-  render_card3_ui <- function(rdm_dict) {
-    # Filter dictionary to get fields for this card
-    card_data <- rdm_dict %>% filter(form_name == "s_eval", field_name %in% program_feedback_fields)
 
-    tagList(
-      tags$h3("Program Feedback"),
-
-      # Introduction text with formatting
-      HTML("
-        <p>What are your thoughts about your experiences in the program?
-        <em>Please note, although this is in your self-evaluation, this data will be extracted
-        anonymously and collated for the entire program for the Program Evaluation Committee to review.</em></p>
-      "),
-
-      tags$hr(),
-
-      # Positive experiences
-      HTML("<p><span style='font-weight: normal;'>Are there certain rotations / conferences / or other experiences that positively contribute to your training?</span></p>"),
-      textAreaInput(
-        "s_e_prog_plus",
-        NULL,  # Label is already in the HTML above
-        "",
-        width = "100%",
-        height = "150px"
-      ),
-
-      tags$hr(),
-
-      # Experiences needing improvement
-      HTML("<p><span style='font-weight: normal;'>Are there certain rotations / conferences / or other experiences that need improvement?</span></p>"),
-      textAreaInput(
-        "s_e_prog_delta",
-        NULL,  # Label is already in the HTML above
-        "",
-        width = "100%",
-        height = "150px"
-      ),
-
-      tags$hr(),
-
-      # Conference and Grand Rounds attendance
-      HTML("<p><span style='font-weight: normal;'>Regarding conference and Grand Rounds attendence - in what circumstances is it easy to attend? Hard? What steps would you like to see the program try?</span></p>"),
-      textAreaInput(
-        "s_e_progconf",
-        NULL,  # Label is already in the HTML above
-        "",
-        width = "100%",
-        height = "150px"
-      ),
-
-      tags$hr(),
-
-      # Other program feedback
-      HTML("<p><span style='font-weight: normal;'>Are there any other systems issues within the program that you want to bring to attention or other feedback for improvement?</span></p>"),
-      textAreaInput(
-        "s_e_progfeed",
-        NULL,  # Label is already in the HTML above
-        "",
-        width = "100%",
-        height = "150px"
-      )
-    )
-  }
 
   # Render UI outputs
   output$card2UI <- renderUI({
@@ -240,23 +153,6 @@ server <- function(input, output, session) {
       other_fields        # Fields defined above
     )
   })
-
-  output$card3UI <- renderUI({
-    render_card3_ui(rdm_dict)
-  })
-
-  output$scholarship_module_ui <- renderUI({
-    req(selected_period())
-    if (selected_period() != "Entering Residency")
-      scholarship_module_ui("schol")
-  })
-
-  scholarship_module_server(
-    "schol",
-    rdm_dict = rdm_dict,
-    record_id = fetch_record_id(resident_info(), resident_data, url, rdm_token)
-  )
-
   # Function to store the program feedback data
   store_program_feedback <- function() {
     feedback_data <- list(
@@ -271,6 +167,25 @@ server <- function(input, output, session) {
       responses[[field]] <- feedback_data[[field]]
     }
   }
+  output$card3UI <- renderUI({
+    render_card3_ui(rdm_dict)
+  })
+
+  output$scholarship_module_ui <- renderUI({
+    req(selected_period())
+    if (selected_period() != "Entering Residency")
+      scholarship_table_ui("schol")
+  })
+
+  # And modify your scholarship module server call:
+  schol_module <- scholarship_table_server(
+    "schol",
+    schol_data = schol_data,  # Make sure this is available in your server function
+    rdm_dict = rdm_dict,
+    record_id = record_id
+  )
+
+
 
   observeEvent(input$open_modal, { req(resident_info()); showEvaluationModal() })
   observeEvent(input$reopen_modal, { req(resident_info()); showEvaluationModal() })
@@ -326,9 +241,7 @@ server <- function(input, output, session) {
     # Check if this is the entering residency flow
     if (rv$flow_path == "entering_residency") {
       showNotification("Attempting to submit data for Entering Residency...", type = "message")
-
-      record_id <- fetch_record_id(resident_info(), NULL, url, rdm_token)
-      validate(need(record_id, "No record_id found!"))
+      validate(need(record_id(), "No record_id found!"))
 
       # Get valid fields and checkbox information
       s_eval_dict <- rdm_dict %>% filter(form_name == "s_eval")
@@ -354,7 +267,7 @@ server <- function(input, output, session) {
 
       # Prepare the payload
       payload <- prepare_redcap_payload(
-        record_id = record_id,
+        record_id = record_id(),
         instrument = "s_eval",
         instance = NULL,  # Will be determined in submit function
         period = period_code,
@@ -367,7 +280,7 @@ server <- function(input, output, session) {
 
       # Submit to REDCap with period check
       res <- submit_to_redcap_with_period_check(
-        record_id = record_id,
+        record_id = record_id(),
         instrument = "s_eval",
         period = period_code,
         data = payload,
@@ -399,8 +312,7 @@ server <- function(input, output, session) {
   observeEvent(input$section3_next, {
     # This handles the standard flow submission after section 3
     if (rv$flow_path == "standard") {
-      record_id <- fetch_record_id(resident_info(), NULL, url, rdm_token)
-      validate(need(record_id, "No record_id found!"))
+      validate(need(record_id(), "No record_id found!"))
 
       # Get valid fields and checkbox information
       s_eval_dict <- rdm_dict %>% filter(form_name == "s_eval")
@@ -433,7 +345,7 @@ server <- function(input, output, session) {
 
       # Prepare the payload
       payload <- prepare_redcap_payload(
-        record_id = record_id,
+        record_id = record_id(),
         instrument = "s_eval",
         instance = NULL,  # Will be determined in submit function
         period = period_code,
@@ -443,7 +355,7 @@ server <- function(input, output, session) {
 
       # Submit to REDCap with period check
       res <- submit_to_redcap_with_period_check(
-        record_id = record_id,
+        record_id = record_id(),
         instrument = "s_eval",
         period = period_code,
         data = payload,
@@ -463,7 +375,8 @@ server <- function(input, output, session) {
     }
   })
 
-  observeEvent(input[["schol-next_btn"]], {
+  # Add this observer to handle the Next button
+  observeEvent(schol_module$next_clicked(), {
     transition("section4_card", "section5_card")
   })
 
@@ -624,12 +537,10 @@ server <- function(input, output, session) {
       "Graduating" = "6"
     )
 
-    record_id <- as.character(resident_data$record_id[resident_data$name == resident_info()][1])
-    validate(need(!is.null(record_id) && length(record_id) > 0, "No record_id found!"))
 
     # Create a direct submission dataframe (similar to your other app)
     submission_data <- data.frame(
-      record_id = record_id,
+      record_id = record_id(),
       redcap_repeat_instrument = "milestone_selfevaluation_c33c",
       prog_mile_date_self = as.character(Sys.Date()),
       prog_mile_period_self = period_mapping[selected_period()]
@@ -653,7 +564,7 @@ server <- function(input, output, session) {
 
     # Generate new instance or get existing one
     instance_number <- generate_new_instance(
-      record_id = record_id,
+      record_id = record_id(),
       instrument_name = "milestone_selfevaluation_c33c",
       coach_data = miles,
       redcap_uri = url,
@@ -669,7 +580,7 @@ server <- function(input, output, session) {
     # Submit the data
     submission_response <- direct_redcap_import(
       data = submission_data,
-      record_id = record_id,
+      record_id = record_id(),
       url = url,
       token = rdm_token
     )
@@ -680,6 +591,8 @@ server <- function(input, output, session) {
       resident_info(),
       selected_period()
     )
+
+
 
     if (!submission_response$success) {
       showNotification(paste("Save failed:", submission_response$outcome_message), type = "error", duration = NULL)
@@ -729,6 +642,147 @@ server <- function(input, output, session) {
                  color = "red", size = 4) +
         theme_void()
     })
+  })
+
+  goals_mod <- goalSettingServer(
+    "goals",
+    rdm_dict,
+    subcompetency_maps,
+    competency_list,
+    milestone_levels
+  )
+  observe({
+    req(selected_period(), resident_info())
+
+    # Get the previous period
+    prev_period <- get_previous_period(selected_period())
+
+    if (!is.na(prev_period)) {
+      record_id <- fetch_record_id(resident_info(), NULL, url, rdm_token)
+
+      # Fetch previous goals from REDCap
+      prev_goals <- fetch_previous_goals(
+        record_id = record_id,
+        period = prev_period,
+        url = url,
+        token = rdm_token
+      )
+
+      if (!is.null(prev_goals)) {
+        # Update the goal module with previous data
+        # This would require adding an update method to the module
+        updateGoalModule(
+          session = session,
+          id = "goals",
+          prev_data = prev_goals
+        )
+      }
+    }
+  })
+
+
+  # Modify your submit handler to include the goals data
+  observeEvent(input$submit, {
+    req(goals_mod$all_selections())
+    validate(need(record_id(), "No record_id found!"))
+
+    # Get the period code
+    period_code <- get_ccc_session(selected_period())
+
+    # Get goals data from the module
+    goals_data <- goals_mod$all_selections()
+
+    # Create base submission data
+    submission_data <- list(
+      record_id = record_id(),
+      ilp_period = period_code,
+
+      # PC/MK Goal review data
+      prior_goal_pcmk = goals_data$pcmk$review$had_prior_goal,
+      review_q_pcmk = goals_data$pcmk$review$progress,
+      review_q2_pcmk = goals_data$pcmk$review$factors,
+      goal_pcmk = goals_data$pcmk$code,
+      how_pcmk = goals_data$pcmk$goal$how,
+
+      # SBP/PBLI Goal review data
+      prior_goal_sbppbl = goals_data$sbp_pbli$review$had_prior_goal,
+      review_q_sbppbl = goals_data$sbp_pbli$review$progress,
+      review_q2_sbppbl = goals_data$sbp_pbli$review$factors,
+      goal_sbppbl = goals_data$sbp_pbli$code,
+      how_sbppbl = goals_data$sbp_pbli$goal$how,
+
+      # PROF/ICS Goal review data
+      prior_goal_profics = goals_data$prof_ics$review$had_prior_goal,
+      review_q_profics = goals_data$prof_ics$review$progress,
+      review_q2_profics = goals_data$prof_ics$review$factors,
+      goal_profics = goals_data$prof_ics$code,
+      how_profics = goals_data$prof_ics$goal$how
+    )
+
+    # Add milestone-specific level selections
+    # For PC/MK
+    if (!is.null(goals_data$pcmk$goal) && !is.null(goals_data$pcmk$subcomp_code)) {
+      comp_code <- tolower(goals_data$pcmk$subcomp_code)
+      row_id <- goals_data$pcmk$goal$row_id
+      level <- goals_data$pcmk$goal$level
+      field_name <- paste0(comp_code, "_r", row_id)
+      submission_data[[field_name]] <- level
+    }
+
+    # For SBP/PBLI
+    if (!is.null(goals_data$sbp_pbli$goal) && !is.null(goals_data$sbp_pbli$subcomp_code)) {
+      comp_code <- tolower(goals_data$sbp_pbli$subcomp_code)
+      row_id <- goals_data$sbp_pbli$goal$row_id
+      level <- goals_data$sbp_pbli$goal$level
+      field_name <- paste0(comp_code, "_r", row_id)
+      submission_data[[field_name]] <- level
+    }
+
+    # For PROF/ICS
+    if (!is.null(goals_data$prof_ics$goal) && !is.null(goals_data$prof_ics$subcomp_code)) {
+      comp_code <- tolower(goals_data$prof_ics$subcomp_code)
+      row_id <- goals_data$prof_ics$goal$row_id
+      level <- goals_data$prof_ics$goal$level
+      field_name <- paste0(comp_code, "_r", row_id)
+      submission_data[[field_name]] <- level
+    }
+
+    # Add target dates and status if they exist
+    if (!is.null(goals_data$pcmk$goal$target_date)) {
+      submission_data$pcmk_target_date <- format(goals_data$pcmk$goal$target_date, "%Y-%m-%d")
+      submission_data$pcmk_status <- goals_data$pcmk$goal$status
+    }
+
+    if (!is.null(goals_data$sbp_pbli$goal$target_date)) {
+      submission_data$sbppbl_target_date <- format(goals_data$sbp_pbli$goal$target_date, "%Y-%m-%d")
+      submission_data$sbppbl_status <- goals_data$sbp_pbli$goal$status
+    }
+
+    if (!is.null(goals_data$prof_ics$goal$target_date)) {
+      submission_data$profics_target_date <- format(goals_data$prof_ics$goal$target_date, "%Y-%m-%d")
+      submission_data$profics_status <- goals_data$prof_ics$goal$status
+    }
+
+    # Log what we're submitting (for debugging)
+    message("Submitting goals data to RedCap: ", jsonlite::toJSON(submission_data))
+
+    # Submit to RedCap using your existing function
+    res <- submit_to_redcap_with_period_check(
+      record_id = record_id(),
+      instrument = "ilp",  # Your RedCap form name for goals
+      period = period_code,
+      data = submission_data,
+      url = url,
+      token = rdm_token
+    )
+
+    if (!isTRUE(res$success)) {
+      showNotification(paste("Goal save failed:", res$outcome_message), type = "error", duration = NULL)
+      return()
+    } else {
+      showNotification("Goals successfully saved!", type = "message", duration = 5)
+      transition("section6_card", "completion_card")
+    }
   })
 
 }

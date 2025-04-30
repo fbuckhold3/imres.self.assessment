@@ -2,6 +2,78 @@ ui <- fluidPage(
   theme = bs_theme(version = 5),
   useShinyjs(),
   tags$style(HTML("
+  /* Imres colors */
+    :root {
+      --imres-bg: #FFFFFF;
+      --imres-text: #333333;
+      --imres-primary: #0072B2;
+      --imres-secondary: #56B4E9;
+      --imres-success: #009E73;
+      --imres-warning: #E69F00;
+      --imres-danger: #D55E00;
+    }
+
+    /* General spacing and styling */
+    .section-container {
+      background-color: var(--imres-bg);
+      padding: 2rem;
+      margin-bottom: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .section-header {
+      color: var(--imres-primary);
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 2px solid var(--imres-secondary);
+    }
+
+    .question-group {
+      background-color: #f8f9fa;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      border-radius: 6px;
+      border-left: 4px solid var(--imres-secondary);
+    }
+
+    .question-header {
+      color: var(--imres-primary);
+      margin-bottom: 1rem;
+    }
+
+    .question-description {
+      color: #666;
+      margin-bottom: 1rem;
+      font-style: italic;
+    }
+
+    /* Progress indicator styling */
+    .progress-indicator {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 2rem;
+    }
+
+    .progress-step {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background-color: #ddd;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 10px;
+    }
+
+    .progress-step.active {
+      background-color: var(--imres-primary);
+    }
+
+    .progress-step.completed {
+      background-color: var(--imres-success);
+    }
   .hidden-card { display: none; }
   .center-screen {
     position: absolute;
@@ -144,17 +216,25 @@ ui <- fluidPage(
       ),
 
       # Card 2: Skills & Extra Reflections
+      # First, modify the card2 UI in your main UI file:
       div(
-        id    = "section2_card",
+        id = "section2_card",
         class = "hidden-card",
-        card(
-          card_header("2. Reflection on knowledge"),
-          card_body(
-            uiOutput("card2UI"),                         # ← this is the placeholder
-            actionButton("section2_next",
-                         "Next Section",
-                         class = "btn-primary")
-          )
+        # Add the intro text section
+        div(
+          class = "mb-4 p-4 bg-light rounded",
+          h3("Learning and Career Planning", class = "mb-3"),
+          p("The following questions will be asking a few questions about your comfort with topics of medicine,
+      how you like to learn, your board prep, and some questions about your career planning.
+      We use this data both to help guiding your learning as well as to inform our curriculum for the Program")
+        ),
+        # Container for the dynamic content
+        uiOutput("card2UI"),
+        # Navigation buttons container
+        div(
+          class = "d-flex justify-content-between mt-4",
+          actionButton("section2_prev", "Previous", class = "btn-secondary"),
+          actionButton("section2_next", "Next", class = "btn-primary")
         )
       ),
 
@@ -283,7 +363,6 @@ ui <- fluidPage(
         )
       ),
 
-      # Card 6: Goals & submission
       div(
         id = "section6_card",
         class = "hidden-card",
@@ -301,36 +380,16 @@ ui <- fluidPage(
                 )
               ),
 
-              # Right column (8/12) - Goal Setting Placeholder
+              # Right column (8/12) - Goal Setting
               column(
                 width = 8,
                 div(
                   class = "goal-setting p-2",
                   h4("Set Development Goals", class = "mb-3"),
-                  p("Based on your milestone assessment, set three goals to focus on for the upcoming period."),
+                  p("Based on your milestone assessment, select goals to focus on for the upcoming period."),
+                  goalSettingUI("goals"),  # Goal setting module
 
-                  # Goal 1
-                  div(
-                    class = "mb-3",
-                    textAreaInput("goal1", "Goal 1:", rows = 2, width = "100%"),
-                    dateInput("goal1_deadline", "Deadline for Goal 1:", width = "50%")
-                  ),
-
-                  # Goal 2
-                  div(
-                    class = "mb-3",
-                    textAreaInput("goal2", "Goal 2:", rows = 2, width = "100%"),
-                    dateInput("goal2_deadline", "Deadline for Goal 2:", width = "50%")
-                  ),
-
-                  # Goal 3
-                  div(
-                    class = "mb-3",
-                    textAreaInput("goal3", "Goal 3:", rows = 2, width = "100%"),
-                    dateInput("goal3_deadline", "Deadline for Goal 3:", width = "50%")
-                  ),
-
-                  # Submit button
+                  # Submit button moved inside the right column
                   div(
                     class = "text-center mt-4",
                     actionButton("submit", "Submit Self-Assessment", class = "btn-success btn-lg")
@@ -340,11 +399,12 @@ ui <- fluidPage(
             )
           )
         )
-      ),
+      ),  # End of Card 6
 
-      # Completion
+      # Completion Card
       div(
-        id = "completion_card", class = "hidden-card",
+        id = "completion_card",
+        class = "hidden-card",
         card(
           card_header("Self-Assessment Completed"),
           card_body(
@@ -352,7 +412,8 @@ ui <- fluidPage(
             p("Your responses have been recorded.")
           )
         )
-      )
-    )
-  )
-)
+      )  # End of completion card
+    )  # End of container mt-4
+  )  # End of main_app_content
+)  # End of fluidPage
+

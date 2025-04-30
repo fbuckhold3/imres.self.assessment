@@ -314,14 +314,14 @@
     },
     "cli": {
       "Package": "cli",
-      "Version": "3.6.4",
+      "Version": "3.6.5",
       "Source": "Repository",
       "Repository": "CRAN",
       "Requirements": [
         "R",
         "utils"
       ],
-      "Hash": "491c34d3d9dd0d2fe13d9f278bb90795"
+      "Hash": "16850760556401a2eeb27d39bd11c9cb"
     },
     "clipr": {
       "Package": "clipr",
@@ -483,7 +483,7 @@
     },
     "diffobj": {
       "Package": "diffobj",
-      "Version": "0.3.5",
+      "Version": "0.3.6",
       "Source": "Repository",
       "Repository": "CRAN",
       "Requirements": [
@@ -494,7 +494,7 @@
         "tools",
         "utils"
       ],
-      "Hash": "bcaa8b95f8d7d01a5dedfd959ce88ab8"
+      "Hash": "e036ce354ab60e705ac5f40bac87e8cb"
     },
     "digest": {
       "Package": "digest",
@@ -931,9 +931,8 @@
       "Source": "GitHub",
       "RemoteType": "github",
       "RemoteHost": "api.github.com",
-      "RemoteUsername": "fbuckhold3",
       "RemoteRepo": "imres",
-      "RemoteRef": "main",
+      "RemoteUsername": "fbuckhold3",
       "RemoteSha": "151d69976c985f7ec459cef8344e62582a2237e8",
       "Requirements": [
         "DT",
@@ -955,7 +954,7 @@
         "tidyr",
         "usethis"
       ],
-      "Hash": "ff48cca409570f0a68e29a711cb4d957"
+      "Hash": "01f0b529f7225857fb844c2e3a919ff0"
     },
     "ini": {
       "Package": "ini",
@@ -1171,7 +1170,7 @@
     },
     "miniUI": {
       "Package": "miniUI",
-      "Version": "0.1.1.1",
+      "Version": "0.1.2",
       "Source": "Repository",
       "Repository": "CRAN",
       "Requirements": [
@@ -1179,7 +1178,7 @@
         "shiny",
         "utils"
       ],
-      "Hash": "fec5f52652d60615fdb3957b3d74324a"
+      "Hash": "96b7fedb0964cc6b86631fb2fee23afa"
     },
     "munsell": {
       "Package": "munsell",
@@ -1259,7 +1258,7 @@
     },
     "pkgdown": {
       "Package": "pkgdown",
-      "Version": "2.1.1",
+      "Version": "2.1.2",
       "Source": "Repository",
       "Repository": "CRAN",
       "Requirements": [
@@ -1268,7 +1267,6 @@
         "callr",
         "cli",
         "desc",
-        "digest",
         "downlit",
         "fontawesome",
         "fs",
@@ -1285,7 +1283,7 @@
         "xml2",
         "yaml"
       ],
-      "Hash": "df2912d5873422b55a13002510f02c9f"
+      "Hash": "6266e6fd90bd2ad21298c6ea52b1346b"
     },
     "pkgload": {
       "Package": "pkgload",

@@ -2193,29 +2193,35 @@
         "RemoteSha": "1.1.2"
       }
     },
-   "imres": {
-  "Package": "imres",
-  "Version": "0.1.0",
-  "Source": "GitHub",
-  "RemoteType": "github",
-  "RemoteHost": "api.github.com",
-  "RemoteRepo": "imres",
-  "RemoteUsername": "fbuckhold3",
-  "RemoteRef": "HEAD",
-  "description": {
-    "Type": "Package",
-    "Package": "imres",
-    "Title": "IM Residency Data Management Support Functions",
-    "Version": "0.1.0",
-    "Author": "Fred Buckhold",
-    "Maintainer": "Fred Buckhold <fred.buckhold@health.slu.edu>",
-    "Description": "This serves as a support package for various shiny apps intending for a residency data management platform. This is initially to be used for the local residency with a conception towards scale. Many functions will be used in various dashboards but in this package form to reduce code complexity with uploading into shiny apps.",
-    "License": "MIT",
-    "Imports": "bslib,\ndevtools,\ndplyr,\nDT,\nhttr,\njsonlite,\nlubridate,\npkgdown,\nhtmltools,\nreactable,\nreadr,\nREDCapR,\nroxygen2,\nshiny,\nstringr,\ntestthat,\ntidyr,\nusethis",
-    "Encoding": "UTF-8",
-    "LazyData": "true",
-    "RoxygenNote": "7.3.2"
-  }
+    "imres": {
+      "Source": "github",
+      "Repository": null,
+      "description": {
+        "Type": "Package",
+        "Package": "imres",
+        "Title": "IM Residency Data Management Support Functions",
+        "Version": "0.1.0",
+        "Author": "Fred Buckhold",
+        "Maintainer": "Fred Buckhold <fred.buckhold@health.slu.edu>",
+        "Description": "This serves as a support package for various shiny apps intending for a residency data management platform. This is initially to be used for the local residency with a conception towards scale. Many functions will be used in various dashboards but in this package form to reduce code complexity with uploading into shiny apps. ",
+        "License": "MIT",
+        "Imports": "devtools,\ndplyr,\nDT,\nhttr,\njsonlite,\nlubridate,\npkgdown,\nreadr,\nREDCapR,\nroxygen2,\nshiny,\nstringr,\ntestthat,\ntidyr,\nusethis",
+        "Encoding": "UTF-8",
+        "LazyData": "true",
+        "RoxygenNote": "7.3.2",
+        "Built": "R 4.3.3; ; 2025-03-29 00:18:22 UTC; unix",
+        "RemoteType": "github",
+        "RemoteHost": "api.github.com",
+        "RemoteUsername": "fbuckhold3",
+        "RemoteRepo": "imres",
+        "RemoteRef": "main",
+        "RemoteSha": "a189cab49fb9bfe5130f4e489d535374fe2f0599",
+        "GithubHost": "api.github.com",
+        "GithubRepo": "imres",
+        "GithubUsername": "fbuckhold3",
+        "GithubRef": "main",
+        "GithubSHA1": "a189cab49fb9bfe5130f4e489d535374fe2f0599"
+      }
     },
     "ini": {
       "Source": "CRAN",

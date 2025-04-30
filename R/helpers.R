@@ -2715,4 +2715,37 @@ scholarship_table_server <- function(id, schol_data, rdm_dict, record_id) {
   })
 }
 
+update_goal_dropdown <- function(session, input_id, rdm_dict_data, field_name_pattern) {
+  req(rdm_dict_data)
+
+  # Filter the dictionary for the specific dropdown field
+  goal_fields <- rdm_dict_data %>%
+    filter(
+      field_type == "dropdown",
+      grepl(field_name_pattern, field_name, ignore.case = TRUE)
+    )
+
+  if(nrow(goal_fields) > 0) {
+    goal_field <- goal_fields %>% slice(1)
+
+    if(nrow(goal_field) > 0 && !is.na(goal_field$select_choices_or_calculations)) {
+      # Extract choices
+      choices_text <- goal_field$select_choices_or_calculations
+
+      # Parse choices (assuming format like "1, Patient Care 1 | 2, Patient Care 2")
+      choices_list <- strsplit(choices_text, " \\| ")[[1]]
+      choices_pairs <- lapply(choices_list, function(x) {
+        parts <- strsplit(x, ", ")[[1]]
+        c(value = parts[1], label = paste(parts[-1], collapse = ", "))
+      })
+
+      choices_values <- sapply(choices_pairs, function(x) x[1])
+      choices_labels <- sapply(choices_pairs, function(x) x[2])
+      choices <- setNames(choices_values, choices_labels)
+
+      # Update the selectInput
+      updateSelectInput(session, input_id, choices = choices)
+    }
+  }
+}
 

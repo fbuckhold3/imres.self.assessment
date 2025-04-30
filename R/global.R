@@ -161,6 +161,14 @@ p_miles <- process_milestones(miles, type = "program")
 # Step 4: Process self milestones
 s_miles <- process_milestones(miles, type = "self")
 
+library(imres)
+
+# Add a check to confirm the functions are available
+if (!exists("scholarship_table_server", mode="function") ||
+    !exists("mod_miles_rating_server", mode="function")) {
+  stop("Critical functions from imres package not found after loading the package")
+}
+
 # ---------- RESOURCE PATHS ----------
 # Set up image resource path for the imres package
 # Find where the imres package is installed and set up the resource path

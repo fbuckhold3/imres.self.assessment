@@ -2004,4 +2004,574 @@ process_scholarship_data <- function(data, record_id, rdm_dict) {
   ))
 }
 
+goalSettingUI <- function(id) {
+  ns <- NS(id)
+
+  tagList(
+    h3("Goal Setting"),
+
+    # PC/MK Section
+    div(
+      class = "goal-section",
+      h4("Goal 1: Patient Care / Medical Knowledge"),
+
+      # Check-in section
+      wellPanel(
+        h4("Previous Goal Review"),
+        checkboxInput(ns("prior_goal_pcmk"), "Did you have a previous goal in this domain?", FALSE),
+        conditionalPanel(
+          condition = sprintf("input['%s'] == true", ns("prior_goal_pcmk")),
+          textAreaInput(ns("review_q_pcmk"),
+                        "What progress did you make on your previous goal in this domain?",
+                        width = "100%"),
+          textAreaInput(ns("review_q2_pcmk"),
+                        "What factors helped or hindered your progress?",
+                        width = "100%")
+        )
+      ),
+
+      # Goal selection section - only show after check-in is completed
+      conditionalPanel(
+        condition = sprintf("input['%s'] == false || (input['%s'] == true && input['%s'] != '' && input['%s'] != '')",
+                            ns("prior_goal_pcmk"), ns("prior_goal_pcmk"), ns("review_q_pcmk"), ns("review_q2_pcmk")),
+        selectInput(
+          ns("goal_pcmk"),
+          label = "Based on the subcompetencies for Patient Care and Medical Knowledge,
+                  which subcompetency do you want to focus on improving over the next 6 months?",
+          choices = NULL,
+          selected = NULL
+        ),
+        uiOutput(ns("selected_pcmk_name")),
+        uiOutput(ns("pcmk_milestone_table")),
+
+        # Show "how" text after goal selection
+        conditionalPanel(
+          condition = sprintf("input['%s'] != null", ns("goal_pcmk")),
+          textOutput(ns("how_pcmk"))
+        ),
+
+        wellPanel(
+          h4("Set PC/MK Goal"),
+          fluidRow(
+            column(6,
+                   selectInput(ns("pcmk_row_select"), "Select Milestone Row:", choices = NULL)
+            ),
+            column(6,
+                   selectInput(ns("pcmk_level_select"), "Target Level:",
+                               choices = setNames(1:5, paste0(1:5, ": ", unlist(milestone_levels))))
+            )
+          ),
+          div(
+            style = "background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-top: 10px;",
+            strong("Selected Goal Text:"),
+            textOutput(ns("pcmk_selected_goal")),
+            dateInput(ns("pcmk_target_date"), "Target Achievement Date:", value = Sys.Date() + 180),
+            selectInput(ns("pcmk_status"), "Goal Status:",
+                        choices = c("Not Started", "In Progress", "Achieved", "Revised"))
+          )
+        )
+      )
+    ),
+
+    hr(),
+
+    # SBP/PBLI Section (similar structure)
+    div(
+      class = "goal-section",
+      h4("Goal 2: Systems-Based Practice / Practice-Based Learning and Improvement"),
+
+      wellPanel(
+        h4("Previous Goal Review"),
+        checkboxInput(ns("prior_goal_sbppbl"), "Did you have a previous goal in this domain?", FALSE),
+        conditionalPanel(
+          condition = sprintf("input['%s'] == true", ns("prior_goal_sbppbl")),
+          textAreaInput(ns("review_q_sbppbl"),
+                        "What progress did you make on your previous goal in this domain?",
+                        width = "100%"),
+          textAreaInput(ns("review_q2_sbppbl"),
+                        "What factors helped or hindered your progress?",
+                        width = "100%")
+        )
+      ),
+
+      conditionalPanel(
+        condition = sprintf("input['%s'] == false || (input['%s'] == true && input['%s'] != '' && input['%s'] != '')",
+                            ns("prior_goal_sbppbl"), ns("prior_goal_sbppbl"), ns("review_q_sbppbl"), ns("review_q2_sbppbl")),
+        # Rest of SBP/PBLI selection UI...
+        selectInput(
+          ns("goal_sbppbl"),
+          label = "Based on the subcompetencies for Systems-Based Practice and Practice-Based Learning and Improvement,
+                  which subcompetency do you want to focus on improving over the next 6 months?",
+          choices = NULL,
+          selected = NULL
+        ),
+        uiOutput(ns("selected_sbp_pbli_name")),
+        uiOutput(ns("sbppbl_milestone_table")),
+
+        conditionalPanel(
+          condition = sprintf("input['%s'] != null", ns("goal_sbppbl")),
+          textOutput(ns("how_sbppbl"))
+        ),
+
+        # Rest of the UI elements...
+        wellPanel(
+          h4("Set SBP/PBLI Goal"),
+          fluidRow(
+            column(6,
+                   selectInput(ns("sbppbl_row_select"), "Select Milestone Row:", choices = NULL)
+            ),
+            column(6,
+                   selectInput(ns("sbppbl_level_select"), "Target Level:",
+                               choices = setNames(1:5, paste0(1:5, ": ", unlist(milestone_levels))))
+            )
+          ),
+          div(
+            style = "background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-top: 10px;",
+            strong("Selected Goal Text:"),
+            textOutput(ns("sbppbl_selected_goal")),
+            dateInput(ns("sbppbl_target_date"), "Target Achievement Date:", value = Sys.Date() + 180),
+            selectInput(ns("sbppbl_status"), "Goal Status:",
+                        choices = c("Not Started", "In Progress", "Achieved", "Revised"))
+          )
+        )
+      )
+    ),
+
+    hr(),
+
+    # PROF/ICS Section (similar structure)
+    div(
+      class = "goal-section",
+      h4("Goal 3: Professionalism / Interpersonal and Communication Skills"),
+
+      wellPanel(
+        h4("Previous Goal Review"),
+        checkboxInput(ns("prior_goal_profics"), "Did you have a previous goal in this domain?", FALSE),
+        conditionalPanel(
+          condition = sprintf("input['%s'] == true", ns("prior_goal_profics")),
+          textAreaInput(ns("review_q_profics"),
+                        "What progress did you make on your previous goal in this domain?",
+                        width = "100%"),
+          textAreaInput(ns("review_q2_profics"),
+                        "What factors helped or hindered your progress?",
+                        width = "100%")
+        )
+      ),
+
+      conditionalPanel(
+        condition = sprintf("input['%s'] == false || (input['%s'] == true && input['%s'] != '' && input['%s'] != '')",
+                            ns("prior_goal_profics"), ns("prior_goal_profics"), ns("review_q_profics"), ns("review_q2_profics")),
+        # Rest of PROF/ICS selection UI...
+        selectInput(
+          ns("goal_subcomp_profics"),
+          label = "Based on the subcompetencies for Professionalism and Interpersonal and Communication Skills,
+                  which subcompetency do you want to focus on improving over the next 6 months?",
+          choices = NULL,
+          selected = NULL
+        ),
+        uiOutput(ns("selected_prof_ics_name")),
+        uiOutput(ns("profics_milestone_table")),
+
+        conditionalPanel(
+          condition = sprintf("input['%s'] != null", ns("goal_subcomp_profics")),
+          textOutput(ns("how_profics"))
+        ),
+
+        # Rest of the UI elements...
+        wellPanel(
+          h4("Set PROF/ICS Goal"),
+          fluidRow(
+            column(6,
+                   selectInput(ns("profics_row_select"), "Select Milestone Row:", choices = NULL)
+            ),
+            column(6,
+                   selectInput(ns("profics_level_select"), "Target Level:",
+                               choices = setNames(1:5, paste0(1:5, ": ", unlist(milestone_levels))))
+            )
+          ),
+          div(
+            style = "background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-top: 10px;",
+            strong("Selected Goal Text:"),
+            textOutput(ns("profics_selected_goal")),
+            dateInput(ns("profics_target_date"), "Target Achievement Date:", value = Sys.Date() + 180),
+            selectInput(ns("profics_status"), "Goal Status:",
+                        choices = c("Not Started", "In Progress", "Achieved", "Revised"))
+          )
+        )
+      )
+    )
+  )
+}
+
+goalSettingServer <- function(id, rdm_dict_data, subcompetency_maps, competency_list, milestone_levels) {
+  moduleServer(id, function(input, output, session) {
+
+    # Update all dropdowns when dictionary is loaded
+    observe({
+      update_goal_dropdown(session, "goal_pcmk", rdm_dict_data, "goal_pcmk")
+      update_goal_dropdown(session, "goal_sbppbl", rdm_dict_data, "goal_sbppbl")
+      update_goal_dropdown(session, "goal_subcomp_profics", rdm_dict_data, "goal_subcomp_profics")
+    })
+
+    # Competency code parsing functions
+    get_subcomp_code <- function(selected, competency_types) {
+      if(is.null(selected) || selected == "") return(NULL)
+
+      if(grepl("^\\d+$", selected)) {
+        num_val <- as.numeric(selected)
+
+        if(identical(competency_types, c("PC", "MK"))) {
+          if(num_val <= 6) {
+            return(paste0("PC", num_val))
+          } else if(num_val <= 9) {
+            return(paste0("MK", num_val - 6))
+          }
+        }
+        else if(identical(competency_types, c("SBP", "PBLI"))) {
+          if(num_val <= 3) {
+            return(paste0("SBP", num_val))
+          } else if(num_val <= 5) {
+            return(paste0("PBLI", num_val - 3))
+          }
+        }
+        else if(identical(competency_types, c("PROF", "ICS"))) {
+          if(num_val <= 4) {
+            return(paste0("PROF", num_val))
+          } else if(num_val <= 7) {
+            return(paste0("ICS", num_val - 4))
+          }
+        }
+      } else if(grepl("^([A-Z]+)(\\d+)$", selected)) {
+        return(selected)
+      }
+      return(NULL)
+    }
+
+    # Get "how" text from dictionary
+    get_how_text <- function(competency_code) {
+      req(competency_code, rdm_dict_data)
+
+      field_name <- paste0("how_", tolower(competency_code))
+      how_field <- rdm_dict_data %>%
+        filter(field_name == !!field_name) %>%
+        pull(field_label)
+
+      if(length(how_field) > 0) how_field[1] else ""
+    }
+
+    # Process selected competency codes
+    selected_pcmk_code <- reactive({
+      get_subcomp_code(input$goal_pcmk, c("PC", "MK"))
+    })
+
+    selected_sbppbl_code <- reactive({
+      get_subcomp_code(input$goal_sbppbl, c("SBP", "PBLI"))
+    })
+
+    selected_profics_code <- reactive({
+      get_subcomp_code(input$goal_subcomp_profics, c("PROF", "ICS"))
+    })
+
+    # Process competency names
+    selected_pcmk_name <- reactive({
+      parse_competency(input$goal_pcmk, c("PC", "MK"), subcompetency_maps, competency_list)
+    })
+
+    selected_sbp_pbli_name <- reactive({
+      parse_competency(input$goal_sbppbl, c("SBP", "PBLI"), subcompetency_maps, competency_list)
+    })
+
+    selected_prof_ics_name <- reactive({
+      parse_competency(input$goal_subcomp_profics, c("PROF", "ICS"), subcompetency_maps, competency_list)
+    })
+
+    # Get milestone data
+    pcmk_milestone_data <- reactive({
+      req(selected_pcmk_code())
+      get_milestone_data(rdm_dict_data, selected_pcmk_code())
+    })
+
+    sbppbl_milestone_data <- reactive({
+      req(selected_sbppbl_code())
+      get_milestone_data(rdm_dict_data, selected_sbppbl_code())
+    })
+
+    profics_milestone_data <- reactive({
+      req(selected_profics_code())
+      get_milestone_data(rdm_dict_data, selected_profics_code())
+    })
+
+    # Display competency names
+    output$selected_pcmk_name <- renderUI({
+      name <- selected_pcmk_name()
+      if (name != "") {
+        div(
+          h5("Selected Competency:"),
+          p(strong(name))
+        )
+      }
+    })
+
+    output$selected_sbp_pbli_name <- renderUI({
+      name <- selected_sbp_pbli_name()
+      if (name != "") {
+        div(
+          h5("Selected Competency:"),
+          p(strong(name))
+        )
+      }
+    })
+
+    output$selected_prof_ics_name <- renderUI({
+      name <- selected_prof_ics_name()
+      if (name != "") {
+        div(
+          h5("Selected Competency:"),
+          p(strong(name))
+        )
+      }
+    })
+
+    # Update milestone row selections
+    observe({
+      req(pcmk_milestone_data())
+      updateSelectInput(session, "pcmk_row_select",
+                        choices = setNames(seq_len(nrow(pcmk_milestone_data())),
+                                           pcmk_milestone_data()$Milestone))
+    })
+
+    observe({
+      req(sbppbl_milestone_data())
+      updateSelectInput(session, "sbppbl_row_select",
+                        choices = setNames(seq_len(nrow(sbppbl_milestone_data())),
+                                           sbppbl_milestone_data()$Milestone))
+    })
+
+    observe({
+      req(profics_milestone_data())
+      updateSelectInput(session, "profics_row_select",
+                        choices = setNames(seq_len(nrow(profics_milestone_data())),
+                                           profics_milestone_data()$Milestone))
+    })
+
+    # Render "how" text outputs
+    output$how_pcmk <- renderText({
+      req(selected_pcmk_code())
+      get_how_text(selected_pcmk_code())
+    })
+
+    output$how_sbppbl <- renderText({
+      req(selected_sbppbl_code())
+      get_how_text(selected_sbppbl_code())
+    })
+
+    output$how_profics <- renderText({
+      req(selected_profics_code())
+      get_how_text(selected_profics_code())
+    })
+
+    # Selected goal reactives
+    selected_pcmk_goal <- reactive({
+      req(pcmk_milestone_data(), input$pcmk_row_select, input$pcmk_level_select)
+      data <- pcmk_milestone_data()
+      row <- as.numeric(input$pcmk_row_select)
+      col <- paste("Level", input$pcmk_level_select)
+
+      list(
+        subcompetency = selected_pcmk_code(),
+        row_id = row,
+        milestone = data$Milestone[row],
+        level = input$pcmk_level_select,
+        goal_text = data[row, col],
+        target_date = input$pcmk_target_date,
+        status = input$pcmk_status,
+        how = get_how_text(selected_pcmk_code())
+      )
+    })
+
+    selected_sbppbl_goal <- reactive({
+      req(sbppbl_milestone_data(), input$sbppbl_row_select, input$sbppbl_level_select)
+      data <- sbppbl_milestone_data()
+      row <- as.numeric(input$sbppbl_row_select)
+      col <- paste("Level", input$sbppbl_level_select)
+
+      list(
+        subcompetency = selected_sbppbl_code(),
+        row_id = row,
+        milestone = data$Milestone[row],
+        level = input$sbppbl_level_select,
+        goal_text = data[row, col],
+        target_date = input$sbppbl_target_date,
+        status = input$sbppbl_status,
+        how = get_how_text(selected_sbppbl_code())
+      )
+    })
+
+    selected_profics_goal <- reactive({
+      req(profics_milestone_data(), input$profics_row_select, input$profics_level_select)
+      data <- profics_milestone_data()
+      row <- as.numeric(input$profics_row_select)
+      col <- paste("Level", input$profics_level_select)
+
+      list(
+        subcompetency = selected_profics_code(),
+        row_id = row,
+        milestone = data$Milestone[row],
+        level = input$profics_level_select,
+        goal_text = data[row, col],
+        target_date = input$profics_target_date,
+        status = input$profics_status,
+        how = get_how_text(selected_profics_code())
+      )
+    })
+
+    # Render milestone tables
+    output$pcmk_milestone_table <- renderUI({
+      req(pcmk_milestone_data())
+      tagList(
+        h5("Milestone Levels"),
+        div(
+          style = "overflow-x: auto;",
+          renderTable({
+            df <- pcmk_milestone_data()
+            col_names <- c("Milestone")
+            for(i in 1:5) {
+              col_names <- c(col_names, paste0(i, ": ", milestone_levels[[as.character(i)]]))
+            }
+            names(df) <- col_names
+            df
+          }, sanitize.text.function = function(x) x)
+        )
+      )
+    })
+
+    output$sbppbl_milestone_table <- renderUI({
+      req(sbppbl_milestone_data())
+      tagList(
+        h5("Milestone Levels"),
+        div(
+          style = "overflow-x: auto;",
+          renderTable({
+            df <- sbppbl_milestone_data()
+            col_names <- c("Milestone")
+            for(i in 1:5) {
+              col_names <- c(col_names, paste0(i, ": ", milestone_levels[[as.character(i)]]))
+            }
+            names(df) <- col_names
+            df
+          }, sanitize.text.function = function(x) x)
+        )
+      )
+    })
+
+    output$profics_milestone_table <- renderUI({
+      req(profics_milestone_data())
+      tagList(
+        h5("Milestone Levels"),
+        div(
+          style = "overflow-x: auto;",
+          renderTable({
+            df <- profics_milestone_data()
+            col_names <- c("Milestone")
+            for(i in 1:5) {
+              col_names <- c(col_names, paste0(i, ": ", milestone_levels[[as.character(i)]]))
+            }
+            names(df) <- col_names
+            df
+          }, sanitize.text.function = function(x) x)
+        )
+      )
+    })
+
+    # Output renderers for selected goals
+    output$pcmk_selected_goal <- renderText({
+      req(selected_pcmk_goal())
+      selected_pcmk_goal()$goal_text
+    })
+
+    output$sbppbl_selected_goal <- renderText({
+      req(selected_sbppbl_goal())
+      selected_sbppbl_goal()$goal_text
+    })
+
+    output$profics_selected_goal <- renderText({
+      req(selected_profics_goal())
+      selected_profics_goal()$goal_text
+    })
+
+    # Return all data including review responses and how text
+    return(list(
+      pcmk = list(
+        code = reactive(input$goal_pcmk),
+        name = selected_pcmk_name,
+        subcomp_code = selected_pcmk_code,
+        goal = selected_pcmk_goal,
+        review = reactive(list(
+          had_prior_goal = input$prior_goal_pcmk,
+          progress = input$review_q_pcmk,
+          factors = input$review_q2_pcmk
+        ))
+      ),
+      sbp_pbli = list(
+        code = reactive(input$goal_sbppbl),
+        name = selected_sbp_pbli_name,
+        subcomp_code = selected_sbppbl_code,
+        goal = selected_sbppbl_goal,
+        review = reactive(list(
+          had_prior_goal = input$prior_goal_sbppbl,
+          progress = input$review_q_sbppbl,
+          factors = input$review_q2_sbppbl
+        ))
+      ),
+      prof_ics = list(
+        code = reactive(input$goal_subcomp_profics),
+        name = selected_prof_ics_name,
+        subcomp_code = selected_profics_code,
+        goal = selected_profics_goal,
+        review = reactive(list(
+          had_prior_goal = input$prior_goal_profics,
+          progress = input$review_q_profics,
+          factors = input$review_q2_profics
+        ))
+      ),
+      all_selections = reactive({
+        list(
+          pcmk = list(
+            code = input$goal_pcmk,
+            name = selected_pcmk_name(),
+            subcomp_code = selected_pcmk_code(),
+            goal = selected_pcmk_goal(),
+            review = list(
+              had_prior_goal = input$prior_goal_pcmk,
+              progress = input$review_q_pcmk,
+              factors = input$review_q2_pcmk
+            )
+          ),
+          sbp_pbli = list(
+            code = input$goal_sbppbl,
+            name = selected_sbp_pbli_name(),
+            subcomp_code = selected_sbppbl_code(),
+            goal = selected_sbppbl_goal(),
+            review = list(
+              had_prior_goal = input$prior_goal_sbppbl,
+              progress = input$review_q_sbppbl,
+              factors = input$review_q2_sbppbl
+            )
+          ),
+          prof_ics = list(
+            code = input$goal_subcomp_profics,
+            name = selected_prof_ics_name(),
+            subcomp_code = selected_profics_code(),
+            goal = selected_profics_goal(),
+            review = list(
+              had_prior_goal = input$prior_goal_profics,
+              progress = input$review_q_profics,
+              factors = input$review_q2_profics
+            )
+          )
+        )
+      })
+    ))
+  })
+}
 

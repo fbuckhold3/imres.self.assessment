@@ -2004,6 +2004,9 @@ process_scholarship_data <- function(data, record_id, rdm_dict) {
   ))
 }
 
+# Helper lists for competencies and milestones
+
+
 goalSettingUI <- function(id) {
   ns <- NS(id)
 

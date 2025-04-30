@@ -106,10 +106,36 @@ s_miles <- process_milestones(miles, type = "self")
 
 # ---------- RESOURCE PATHS ----------
 # Set up image resource path for the imres package
-imres_www_path <- file.path(renv::paths$library(), "imres", "www")
-addResourcePath("imres-images", imres_www_path)
+# Find where the imres package is installed and set up the resource path
+tryCatch({
+  # Get the path to the www directory in the imres package
+  img_path <- system.file("www", package = "imres")
 
-# Debug resource path information
-message("Image path: ", imres_www_path)
-message("Path exists: ", dir.exists(imres_www_path))
-message("Files: ", paste(list.files(imres_www_path), collapse=", "))
+  # Check if the path exists and is a directory
+  if (dir.exists(img_path)) {
+    message("Found imres www directory at: ", img_path)
+    addResourcePath("imres-images", img_path)
+  } else {
+    # Try alternative approaches if the standard path doesn't work
+    # Check if the package is installed in a different location
+    lib_paths <- .libPaths()
+    message("Checking library paths: ", paste(lib_paths, collapse = ", "))
+
+    # Search in all library paths
+    for (lib in lib_paths) {
+      potential_path <- file.path(lib, "imres", "www")
+      message("Checking potential path: ", potential_path)
+      if (dir.exists(potential_path)) {
+        message("Found imres www directory at: ", potential_path)
+        addResourcePath("imres-images", potential_path)
+        break
+      }
+    }
+  }
+}, error = function(e) {
+  message("Error setting up imres-images resource path: ", e$message)
+  # Provide a fallback mechanism or warning if images aren't available
+})
+
+# Verify that the resource path was added successfully
+message("Current resource paths: ", paste(names(resourcePaths()), collapse = ", "))

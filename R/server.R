@@ -12,6 +12,8 @@ server <- function(input, output, session) {
   p_miles <- app_data$p_miles
   s_miles <- app_data$s_miles
   url <- app_data$url
+  eval_token <- app_data$eval_token
+  rdm_token <- app_data$rdm_token
 
   entering_fields <- c(
     "s_e_fac_assist","s_e_fac_member","s_e_fac_email",

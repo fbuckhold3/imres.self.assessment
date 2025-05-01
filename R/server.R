@@ -1,37 +1,45 @@
 server <- function(input, output, session) {
+  # Track whether data has been loaded
+  data_loaded <- reactiveVal(FALSE)
+
   # Make sure data is available
   observe({
-    # This will run once when the server starts
-    if (!exists("rdm_dict") || is.null(rdm_dict)) {
-      showNotification("Loading required data...", type = "message", duration = NULL, id = "loading")
+    # Only run once
+    if (!data_loaded()) {
+      # This will run once when the server starts
+      if (!exists("rdm_dict") || is.null(rdm_dict)) {
+        showNotification("Loading required data...", type = "message", duration = NULL, id = "loading")
 
-      # Try loading data again
-      app_data <- ensure_data_loaded()
+        # Try loading data again
+        app_data <- ensure_data_loaded()
 
-      if (!is.null(app_data)) {
-        # Create variables in the server environment
-        rdm_dict <<- app_data$rdm_dict
-        ass_dict <<- app_data$ass_dict
-        url <<- app_data$url
-        eval_token <<- app_data$eval_token
-        rdm_token <<- app_data$rdm_token
-        fac_token <<- app_data$fac_token
+        if (!is.null(app_data)) {
+          # Create variables in the server environment
+          rdm_dict <<- app_data$rdm_dict
+          ass_dict <<- app_data$ass_dict
+          url <<- app_data$url
+          eval_token <<- app_data$eval_token
+          rdm_token <<- app_data$rdm_token
+          fac_token <<- app_data$fac_token
 
-        # Remove the notification
-        removeNotification(id = "loading")
-        showNotification("Data loaded successfully", type = "message", duration = 3)
-      } else {
-        # Show an error
-        removeNotification(id = "loading")
-        showNotification(
-          "Critical error: Failed to load required data. Please check your tokens and configuration.",
-          type = "error",
-          duration = NULL
-        )
+          # Remove the notification
+          removeNotification(id = "loading")
+          showNotification("Data loaded successfully", type = "message", duration = 3)
+        } else {
+          # Show an error
+          removeNotification(id = "loading")
+          showNotification(
+            "Critical error: Failed to load required data. Please check your tokens and configuration.",
+            type = "error",
+            duration = NULL
+          )
+        }
       }
-    }
-  }, once = TRUE)  # Note: No comma here, this closes the observe() call
 
+      # Mark as loaded
+      data_loaded(TRUE)
+    }
+  })
 
   entering_fields <- c(
     "s_e_fac_assist","s_e_fac_member","s_e_fac_email",

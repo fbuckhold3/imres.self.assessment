@@ -132,20 +132,54 @@ load_imres_data <- function(config) {
     NULL
   })
 
-  # Now access scholarship data after rdm_dat is defined
+  # In the load_imres_data function, modify the scholarship data extraction:
   schol_data <- tryCatch({
+    cat("DEBUG: Starting scholarship data extraction\n")
     if (is.null(rdm_dat)) {
-      cat("rdm_dat is NULL, cannot extract scholarship data\n")
-      NULL
-    } else if (!("scholarship" %in% names(rdm_dat))) {
-      cat("scholarship not found in rdm_dat keys:", paste(names(rdm_dat), collapse=", "), "\n")
+      cat("DEBUG: rdm_dat is NULL, cannot extract scholarship data\n")
       NULL
     } else {
-      cat("Successfully accessed scholarship data\n")
-      rdm_dat$scholarship
+      cat("DEBUG: rdm_dat is not NULL\n")
+      cat("DEBUG: rdm_dat contains these keys:", paste(names(rdm_dat), collapse=", "), "\n")
+
+      # Try both "scholarship" and "Scholarship" keys
+      if ("scholarship" %in% names(rdm_dat)) {
+        cat("DEBUG: Found scholarship data (lowercase) in rdm_dat\n")
+        schol_data <- rdm_dat$scholarship
+      } else if ("Scholarship" %in% names(rdm_dat)) {
+        cat("DEBUG: Found Scholarship data (capitalized) in rdm_dat\n")
+        schol_data <- rdm_dat$Scholarship
+      } else {
+        # Alternative approach: try to extract from the main data frame
+        cat("DEBUG: Looking for scholarship data in repeating instruments\n")
+        if ("redcap_repeat_instrument" %in% names(rdm_dat)) {
+          schol_data <- rdm_dat %>%
+            filter(redcap_repeat_instrument == "Scholarship")
+          if (nrow(schol_data) > 0) {
+            cat("DEBUG: Extracted", nrow(schol_data), "rows of scholarship data from main dataframe\n")
+          } else {
+            cat("DEBUG: No scholarship data found in main dataframe\n")
+            NULL
+          }
+        } else {
+          cat("DEBUG: No scholarship data found and no repeating instruments in rdm_dat\n")
+          NULL
+        }
+      }
+
+      # Debug the extracted data
+      if (exists("schol_data")) {
+        cat("DEBUG: scholarship data class:", class(schol_data), "\n")
+        if (is.data.frame(schol_data)) {
+          cat("DEBUG: scholarship data has", nrow(schol_data), "rows and", ncol(schol_data), "columns\n")
+        }
+        schol_data
+      } else {
+        NULL
+      }
     }
   }, error = function(e) {
-    cat("Warning: scholarship data not found in rdm_dat:", e$message, "\n")
+    cat("DEBUG: Error extracting scholarship data:", e$message, "\n")
     NULL
   })
 
@@ -301,15 +335,4 @@ competency_list <- list(
 # Load helper functions
 source("R/helpers.R")
 
-# Define a reactive value to hold app data
-app_data_store <- NULL
 
-# Function to ensure data is loaded
-ensure_data_loaded <- function() {
-  if (is.null(app_data_store)) {
-    # Only initialize data when needed
-    config <- initialize_app_config()
-    app_data_store <<- load_imres_data(config)
-  }
-  return(app_data_store)
-}

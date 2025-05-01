@@ -2796,7 +2796,7 @@ get_milestone_data <- function(rdm_dict_data, subcomp_code) {
 
 
 # Updated Scholarship Module UI
-scholarship_module_ui <- function(id){
+scholarship_module_ui <- function(id, rdm_dict){
   ns <- NS(id)
   tagList(
     h3("4. Scholarship & QI Projects"),
@@ -2862,17 +2862,11 @@ scholarship_module_server <- function(id, rdm_dict, record_id, schol_data = NULL
 
     # ---- TABLE DISPLAY SECTION (from scholarship_table_server) ----
 
-    # Process the scholarship data
     scholarship_results <- reactive({
       req(record_id())
+      # Use the passed parameter instead of referencing a global variable
       if (is.null(schol_data)) {
-        # Fetch scholarship data from REDCap if not provided
-        # (implement logic to fetch data)
-        return(list(
-          table_data = data.frame(),
-          completed_ps = FALSE,
-          completed_rca = FALSE
-        ))
+        # ...
       } else {
         process_scholarship_data(schol_data, record_id(), rdm_dict)
       }

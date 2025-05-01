@@ -1,46 +1,49 @@
 server <- function(input, output, session) {
-
   redcap_url <- "https://redcapsurvey.slu.edu/api/"
-  # Define a data_loaded reactive to check if we have resident data
-  data_loaded <- reactiveVal(FALSE)
 
-  # Make sure data is available
-  observe({
-    # First check if resident_data exists
-    if (!exists("resident_data") || is.null(resident_data)) {
-      showNotification("Loading resident data...", type = "message", duration = NULL, id = "loading")
+  # Show loading notification
+  showNotification("Loading data... may take a sec", type = "message", duration = NULL, id = "loading")
 
-      # Try loading data again
-      app_data <- ensure_data_loaded()
+  # Load data immediately at server start
+  app_data <- ensure_data_loaded()
 
-      if (!is.null(app_data) && !is.null(app_data$resident_data)) {
-        # Create global variables
-        resident_data <<- app_data$resident_data
-        rdm_dict <<- app_data$rdm_dict
-        ass_dict <<- app_data$ass_dict
-        schol_data <<- app_data$schol_data
-        miles <<- app_data$miles
-        p_miles <<- app_data$p_miles
-        s_miles <<- app_data$s_miles
-        eval_token <<- app_data$eval_token
-        rdm_token <<- app_data$rdm_token
-        fac_token <<- app_data$fac_token
+  # Check if data loaded successfully
+  if (!is.null(app_data) && !is.null(app_data$resident_data)) {
+    # Create variables
+    resident_data <- app_data$resident_data
+    rdm_dict <- app_data$rdm_dict
+    ass_dict <- app_data$ass_dict
+    schol_data <- app_data$schol_data
+    miles <- app_data$miles
+    p_miles <- app_data$p_miles
+    s_miles <- app_data$s_miles
+    eval_token <- app_data$eval_token
+    rdm_token <- app_data$rdm_token
+    fac_token <- app_data$fac_token
 
-        removeNotification(id = "loading")
-        showNotification("Data loaded successfully", type = "message", duration = 3)
-        data_loaded(TRUE)
-      } else {
-        removeNotification(id = "loading")
-        showNotification(
-          "Failed to load resident data. Please check your tokens and configuration.",
-          type = "error",
-          duration = NULL
-        )
-      }
-    } else {
-      data_loaded(TRUE)
+    # Remove loading notification and show success
+    removeNotification(id = "loading")
+    showNotification("Data loaded successfully", type = "message", duration = 3)
+
+    # Set a reactive to indicate data is loaded
+    data_loaded <- reactiveVal(TRUE)
+
+    # Debug output
+    cat("DEBUG - After loading data:\n")
+    cat("DEBUG - schol_data class:", class(schol_data), "\n")
+    if (is.data.frame(schol_data)) {
+      cat("DEBUG - schol_data dims:", nrow(schol_data), "x", ncol(schol_data), "\n")
     }
-  })
+  } else {
+    # Data loading failed
+    removeNotification(id = "loading")
+    showNotification(
+      "Failed to load resident data. Please check your tokens and configuration.",
+      type = "error",
+      duration = NULL
+    )
+    data_loaded <- reactiveVal(FALSE)
+  }
 
 
 
@@ -223,7 +226,7 @@ server <- function(input, output, session) {
   output$scholarship_module_ui <- renderUI({
     req(selected_period())
     if (selected_period() != "Entering Residency")
-      scholarship_module_ui("schol")
+      scholarship_module_ui("schol", rdm_dict)  # Pass rdm_dict explicitly
     else
       div(
         p("Scholarship tracking begins after entering residency."),
@@ -231,9 +234,26 @@ server <- function(input, output, session) {
       )
   })
 
-  cat("Before schol_data access: ", exists("schol_data"), "\n")
-  cat("schol_data is NULL: ", is.null(schol_data), "\n")
-  if (!is.null(schol_data)) cat("schol_data rows: ", nrow(schol_data), "\n")
+  # Create reactive for schol_data
+  scholarship_data <- reactive({
+    # Return the data or NULL if not available
+    if (exists("schol_data") && !is.null(schol_data)) {
+      schol_data
+    } else {
+      NULL
+    }
+  })
+
+  # After loading data but before module call
+  cat("DEBUG - At module call time:\n")
+  cat("DEBUG - schol_data exists:", exists("schol_data"), "\n")
+  cat("DEBUG - schol_data is NULL:", is.null(schol_data), "\n")
+  if (!is.null(schol_data)) {
+    cat("DEBUG - schol_data class:", class(schol_data), "\n")
+    if (is.data.frame(schol_data)) {
+      cat("DEBUG - schol_data dims:", nrow(schol_data), "x", ncol(schol_data), "\n")
+    }
+  }
 
   # Call without the schol_data parameter
   scholarship_module_server(

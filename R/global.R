@@ -111,6 +111,14 @@ load_imres_data <- function(config) {
     NULL
   })
 
+  schol_data <- tryCatch({
+    rdm_dat$scholarship
+  }, error = function(e) {
+    cat("Warning: scholarship data not found in rdm_dat\n")
+    NULL
+  })
+
+
   ass_dict <- tryCatch({
     cat("Attempting to get ass_dict data dictionary...\n")
     result <- get_data_dict(config$eval_token, config$url)
@@ -192,6 +200,7 @@ load_imres_data <- function(config) {
     ass_dict = ass_dict,
     resident_data = resident_data,
     miles = miles,
+    schol_data = schol_data,
     p_miles = p_miles,
     s_miles = s_miles,
     url = config$url,

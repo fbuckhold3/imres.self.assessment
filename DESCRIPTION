@@ -1,8 +1,7 @@
 Package: imres.self.assessment
 Title: Web-based shiny app to have IM residents do self-evaluation and submit to RedCap
 Version: 0.0.0.9000
-Authors@R: 
-    Fred Buckhold, fred.buckhold@slucare.ssmhealth.com, role = c("aut", "cre"))
+Authors@R: person("Fred", "Buckhold", email = "fred.buckhold@slucare.ssmhealth.com", role = c("aut", "cre"))
 Description: This creates a complex shiny app that allows a user to enter their unique id, enter reflections on their progress as a resident, and have the data submitted to RedCap for review by their faculty coach 
 License: `use_mit_license()`
 Encoding: UTF-8

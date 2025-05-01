@@ -20,7 +20,7 @@ server <- function(input, output, session) {
         miles <<- app_data$miles
         p_miles <<- app_data$p_miles
         s_miles <<- app_data$s_miles
-        url <<- app_data$url
+        url <- "https://redcapsurvey.slu.edu/api/"
         eval_token <<- app_data$eval_token
         rdm_token <<- app_data$rdm_token
         fac_token <<- app_data$fac_token

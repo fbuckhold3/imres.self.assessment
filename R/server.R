@@ -1,45 +1,47 @@
 server <- function(input, output, session) {
-  # Track whether data has been loaded
+  # Define a data_loaded reactive to check if we have resident data
   data_loaded <- reactiveVal(FALSE)
 
   # Make sure data is available
   observe({
-    # Only run once
-    if (!data_loaded()) {
-      # This will run once when the server starts
-      if (!exists("rdm_dict") || is.null(rdm_dict)) {
-        showNotification("Loading required data...", type = "message", duration = NULL, id = "loading")
+    # First check if resident_data exists
+    if (!exists("resident_data") || is.null(resident_data)) {
+      showNotification("Loading resident data...", type = "message", duration = NULL, id = "loading")
 
-        # Try loading data again
-        app_data <- ensure_data_loaded()
+      # Try loading data again
+      app_data <- ensure_data_loaded()
 
-        if (!is.null(app_data)) {
-          # Create variables in the server environment
-          rdm_dict <<- app_data$rdm_dict
-          ass_dict <<- app_data$ass_dict
-          url <<- app_data$url
-          eval_token <<- app_data$eval_token
-          rdm_token <<- app_data$rdm_token
-          fac_token <<- app_data$fac_token
+      if (!is.null(app_data) && !is.null(app_data$resident_data)) {
+        # Create global variables
+        resident_data <<- app_data$resident_data
+        rdm_dict <<- app_data$rdm_dict
+        ass_dict <<- app_data$ass_dict
+        schol_data <<- app_data$schol_data
+        miles <<- app_data$miles
+        p_miles <<- app_data$p_miles
+        s_miles <<- app_data$s_miles
+        url <<- app_data$url
+        eval_token <<- app_data$eval_token
+        rdm_token <<- app_data$rdm_token
+        fac_token <<- app_data$fac_token
 
-          # Remove the notification
-          removeNotification(id = "loading")
-          showNotification("Data loaded successfully", type = "message", duration = 3)
-        } else {
-          # Show an error
-          removeNotification(id = "loading")
-          showNotification(
-            "Critical error: Failed to load required data. Please check your tokens and configuration.",
-            type = "error",
-            duration = NULL
-          )
-        }
+        removeNotification(id = "loading")
+        showNotification("Data loaded successfully", type = "message", duration = 3)
+        data_loaded(TRUE)
+      } else {
+        removeNotification(id = "loading")
+        showNotification(
+          "Failed to load resident data. Please check your tokens and configuration.",
+          type = "error",
+          duration = NULL
+        )
       }
-
-      # Mark as loaded
+    } else {
       data_loaded(TRUE)
     }
   })
+
+
 
   entering_fields <- c(
     "s_e_fac_assist","s_e_fac_member","s_e_fac_email",
@@ -101,8 +103,12 @@ server <- function(input, output, session) {
     }
   })
 
-
+  # Add validation to your existing reactives
   resident_info <- reactive({
+    req(data_loaded())
+    validate(need(exists("resident_data") && !is.null(resident_data),
+                  "Resident data not available"))
+
     req(access_code())
     df <- resident_data %>% filter(access_code == access_code())
     if (nrow(df) == 0) return(NULL)

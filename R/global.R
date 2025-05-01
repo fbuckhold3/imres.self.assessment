@@ -21,157 +21,123 @@ library(data.table)
 library(purrr)
 library(ggradar)
 
-# In global.R, after your library imports
+load_imres_data <- function(config) {
+  # Get data dictionaries
+  rdm_dict <- safe_get_data_dict(config$rdm_token, config$url)
+  ass_dict <- safe_get_data_dict(config$eval_token, config$url)
 
-# Helper function to safely get data dictionary
-safe_get_data_dict <- function(token, url) {
-  if (is.null(token) || token == "") {
-    cat("WARNING: Token is missing or empty, cannot get data dictionary\n")
-    return(NULL)
-  }
-
-  tryCatch({
-    cat("Attempting to get data dictionary with token length:", nchar(token), "\n")
-    result <- get_data_dict(token, url)
-    cat("Successfully retrieved data dictionary with", nrow(result), "rows\n")
-    return(result)
-  }, error = function(e) {
-    cat("ERROR getting data dictionary:", e$message, "\n")
-    return(NULL)
-  })
-}
-
-# Initialize app configuration and tokens
-initialize_app_config <- function() {
-  # Set up REDCap API URL
-  url <- "https://redcapsurvey.slu.edu/api/"
-
-  # Debug information about environment variables
-  cat("Available environment variables (first 10):\n")
-  env_vars <- names(Sys.getenv())
-  print(head(env_vars, 10))
-  cat("EVAL_TOKEN exists:", "EVAL_TOKEN" %in% names(Sys.getenv()), "\n")
-  cat("RDM_TOKEN exists:", "RDM_TOKEN" %in% names(Sys.getenv()), "\n")
-  cat("FAC_TOKEN exists:", "FAC_TOKEN" %in% names(Sys.getenv()), "\n")
-
-  # Identify whether we are in a hosted environment
-  is_hosted <- Sys.getenv("EVAL_TOKEN") != ""
-
-  # Load tokens from environment variables or config file
-  if (is_hosted) {
-    eval_token <- Sys.getenv("EVAL_TOKEN")
-    rdm_token <- Sys.getenv("RDM_TOKEN")
-    fac_token <- Sys.getenv("FAC_TOKEN")
-
-    # Check if tokens are empty strings even though they exist
-    if (nchar(eval_token) == 0 || nchar(rdm_token) == 0 || nchar(fac_token) == 0) {
-      cat("WARNING: One or more required tokens are empty in environment!\n")
-      cat("Using config file as fallback.\n")
-      # Load from config file as fallback
-      conf <- tryCatch({
-        config::get(file = "config.yml")
-      }, error = function(e) {
-        message("Error loading config file: ", e$message)
-        list(
-          eval_token = "",
-          rdm_token = "",
-          fac_token = ""
-        )
-      })
-
-      # Use config values if environment variables are empty
-      if (nchar(eval_token) == 0) eval_token <- conf$eval_token
-      if (nchar(rdm_token) == 0) rdm_token <- conf$rdm_token
-      if (nchar(fac_token) == 0) fac_token <- conf$fac_token
-    }
-
-    # Disable SSL verification in the hosted environment (NOT recommended for production)
-    httr::set_config(httr::config(ssl_verifypeer = FALSE))
-  } else {
-    # Use config file for local development
-    conf <- tryCatch({
-      config::get(file = "config.yml")
-    }, error = function(e) {
-      message("Error loading config file: ", e$message)
-      list(
-        eval_token = "",
-        rdm_token = "",
-        fac_token = ""
-      )
-    })
-    eval_token <- conf$eval_token
-    rdm_token <- conf$rdm_token
-    fac_token <- conf$fac_token
-  }
-
-  # Print token values (length only for security)
-  cat("EVAL_TOKEN length:", nchar(eval_token), "\n")
-  cat("RDM_TOKEN length:", nchar(rdm_token), "\n")
-  cat("FAC_TOKEN length:", nchar(fac_token), "\n")
-
-  # Return the environment with the tokens and URL
-  list(
-    url = url,
-    eval_token = eval_token,
-    rdm_token = rdm_token,
-    fac_token = fac_token
-  )
-}
-
-# Global storage for app data
-app_data_store <- NULL
-
-# Function to ensure data is loaded
-ensure_data_loaded <- function() {
-  if (is.null(app_data_store)) {
-    cat("Starting data load process...\n")
-
-    # Get configuration with tokens
-    config <- initialize_app_config()
-
-    # First, get the data dictionaries
-    rdm_dict <- safe_get_data_dict(config$rdm_token, config$url)
-    ass_dict <- safe_get_data_dict(config$eval_token, config$url)
-
-    # Only continue if we have the dictionaries
-    if (is.null(rdm_dict) || is.null(ass_dict)) {
-      cat("CRITICAL ERROR: Failed to load data dictionaries\n")
+  # Function to safely pull resident data from REDCap API
+  safe_get_resident_data <- function() {
+    if (is.null(config$eval_token) || config$eval_token == "" ||
+        is.null(config$rdm_token) || config$rdm_token == "") {
+      cat("WARNING: Required tokens for resident data are missing\n")
       return(NULL)
     }
 
-    # Continue with other data loading
-    # ... rest of your loading code
+    tryCatch({
+      cat("Attempting to pull assessment data...\n")
+      ass_dat <- full_api_pull(config$eval_token, config$url)
+      cat("Successfully pulled assessment data\n")
 
-    # Store the results
-    app_data_store <<- list(
-      rdm_dict = rdm_dict,
-      ass_dict = ass_dict,
-      url = config$url,
-      eval_token = config$eval_token,
-      rdm_token = config$rdm_token,
-      fac_token = config$fac_token
-      # Add other data as loaded
-    )
+      cat("Wrangling assessment data...\n")
+      ass_dat <- wrangle_assessment_data(ass_dat)
+      cat("Assessment data wrangled\n")
+
+      cat("Pulling forms data...\n")
+      rdm_dat <- forms_api_pull(config$rdm_token, config$url, 'resident_data', 'faculty_evaluation', 'ilp', 's_eval', 'scholarship')
+      cat("Forms data pulled\n")
+
+      cat("Creating resident data...\n")
+      result <- create_res_data(ass_dat, rdm_dat)
+      cat("Resident data created with", nrow(result), "rows\n")
+
+      return(result)
+    }, error = function(e) {
+      cat("Error in resident data API pull:", e$message, "\n")
+      return(NULL)
+    })
   }
 
-  return(app_data_store)
-}
+  # Load resident data
+  resident_data <- safe_get_resident_data()
 
-# Try to load data now
-cat("Pre-loading data in global.R...\n")
-app_data <- ensure_data_loaded()
+  # Load scholarship data
+  schol_data <- tryCatch({
+    cat("Pulling scholarship data...\n")
+    result <- redcap_read(
+      redcap_uri = config$url,
+      token = config$rdm_token,
+      forms = "scholarship"
+    )$data
+    cat("Scholarship data pulled with", nrow(result), "rows\n")
+    return(result)
+  }, error = function(e) {
+    cat("Error loading scholarship data:", e$message, "\n")
+    return(NULL)
+  })
 
-# Make data globally available if loaded
-if (!is.null(app_data)) {
-  rdm_dict <- app_data$rdm_dict
-  ass_dict <- app_data$ass_dict
-  url <- app_data$url
-  eval_token <- app_data$eval_token
-  rdm_token <- app_data$rdm_token
-  fac_token <- app_data$fac_token
-  cat("Global variables created from app_data\n")
-} else {
-  cat("WARNING: app_data is NULL, global variables not created\n")
+  # Step 1: Pull all milestone data
+  miles <- tryCatch({
+    cat("Getting all milestones...\n")
+    result <- get_all_milestones(config$rdm_token, config$url)
+    cat("All milestones retrieved\n")
+    return(result)
+  }, error = function(e) {
+    cat("Error loading milestones:", e$message, "\n")
+    return(NULL)
+  })
+
+  # Step 2: Fill in resident data (name, record_id)
+  if (!is.null(miles)) {
+    cat("Filling missing resident data in milestones...\n")
+    miles <- tryCatch({
+      fill_missing_resident_data(miles)
+    }, error = function(e) {
+      cat("Error filling resident data:", e$message, "\n")
+      return(miles)  # Return original miles if filling fails
+    })
+    cat("Resident data filled in milestones\n")
+  }
+
+  # Step 3 & 4: Process milestones
+  p_miles <- NULL
+  s_miles <- NULL
+  if (!is.null(miles)) {
+    p_miles <- tryCatch({
+      cat("Processing program milestones...\n")
+      result <- process_milestones(miles, type = "program")
+      cat("Program milestones processed\n")
+      return(result)
+    }, error = function(e) {
+      cat("Error processing program milestones:", e$message, "\n")
+      return(NULL)
+    })
+
+    s_miles <- tryCatch({
+      cat("Processing self milestones...\n")
+      result <- process_milestones(miles, type = "self")
+      cat("Self milestones processed\n")
+      return(result)
+    }, error = function(e) {
+      cat("Error processing self milestones:", e$message, "\n")
+      return(NULL)
+    })
+  }
+
+  # Return all the data
+  list(
+    rdm_dict = rdm_dict,
+    ass_dict = ass_dict,
+    resident_data = resident_data,
+    schol_data = schol_data,
+    miles = miles,
+    p_miles = p_miles,
+    s_miles = s_miles,
+    url = config$url,
+    eval_token = config$eval_token,
+    rdm_token = config$rdm_token,
+    fac_token = config$fac_token
+  )
 }
 
 # Helper lists for competencies and milestones

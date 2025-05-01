@@ -26,6 +26,14 @@ initialize_app_config <- function() {
   # Set up REDCap API URL
   url <- "https://redcapsurvey.slu.edu/api/"
 
+  # Debug information about environment variables
+  cat("Available environment variables (first 10):\n")
+  env_vars <- names(Sys.getenv())
+  print(head(env_vars, 10))
+  cat("EVAL_TOKEN exists:", "EVAL_TOKEN" %in% names(Sys.getenv()), "\n")
+  cat("RDM_TOKEN exists:", "RDM_TOKEN" %in% names(Sys.getenv()), "\n")
+  cat("FAC_TOKEN exists:", "FAC_TOKEN" %in% names(Sys.getenv()), "\n")
+
   # Identify whether we are in a hosted environment
   is_hosted <- Sys.getenv("EVAL_TOKEN") != ""
 
@@ -34,7 +42,28 @@ initialize_app_config <- function() {
     eval_token <- Sys.getenv("EVAL_TOKEN")
     rdm_token <- Sys.getenv("RDM_TOKEN")
     fac_token <- Sys.getenv("FAC_TOKEN")
-    new_ass_token <- Sys.getenv("NEW_ASS_TOKEN")
+
+    # Check if tokens are empty strings even though they exist
+    if (nchar(eval_token) == 0 || nchar(rdm_token) == 0 || nchar(fac_token) == 0) {
+      cat("WARNING: One or more required tokens are empty in environment!\n")
+      cat("Using config file as fallback.\n")
+      # Load from config file as fallback
+      conf <- tryCatch({
+        config::get(file = "config.yml")
+      }, error = function(e) {
+        message("Error loading config file: ", e$message)
+        list(
+          eval_token = "",
+          rdm_token = "",
+          fac_token = ""
+        )
+      })
+
+      # Use config values if environment variables are empty
+      if (nchar(eval_token) == 0) eval_token <- conf$eval_token
+      if (nchar(rdm_token) == 0) rdm_token <- conf$rdm_token
+      if (nchar(fac_token) == 0) fac_token <- conf$fac_token
+    }
 
     # Disable SSL verification in the hosted environment (NOT recommended for production)
     httr::set_config(httr::config(ssl_verifypeer = FALSE))
@@ -44,22 +73,19 @@ initialize_app_config <- function() {
     eval_token <- conf$eval_token
     rdm_token <- conf$rdm_token
     fac_token <- conf$fac_token
-    new_ass_token <- conf$new_ass_token
   }
 
-  # Debug token information
-  cat("=== Checking the tokens exist in Sys.getenv() ===\n")
-  cat("EVAL_TOKEN is set? ", "EVAL_TOKEN" %in% names(Sys.getenv()), "\n")
-  cat("RDM_TOKEN is set?  ", "RDM_TOKEN" %in% names(Sys.getenv()), "\n")
-  cat("FAC_TOKEN is set?  ", "FAC_TOKEN" %in% names(Sys.getenv()), "\n")
+  # Print token values (length only for security)
+  cat("EVAL_TOKEN length:", nchar(eval_token), "\n")
+  cat("RDM_TOKEN length:", nchar(rdm_token), "\n")
+  cat("FAC_TOKEN length:", nchar(fac_token), "\n")
 
   # Return the environment with the tokens and URL
   list(
     url = url,
     eval_token = eval_token,
     rdm_token = rdm_token,
-    fac_token = fac_token,
-    new_ass_token = new_ass_token
+    fac_token = fac_token
   )
 }
 

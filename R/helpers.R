@@ -1906,104 +1906,6 @@ prepare_milestone_plot_data <- function(current_data, median_data) {
 }
 
 
-# Function to process scholarship data
-process_scholarship_data <- function(data, record_id, rdm_dict) {
-  # Filter by record_id
-  filtered_data <- data %>%
-    filter(record_id == record_id)
-
-  # Skip processing if no data is found
-  if (nrow(filtered_data) == 0) {
-    return(list(
-      table_data = data.frame(
-        Scholarship_Type = character(),
-        Description = character(),
-        stringsAsFactors = FALSE
-      ),
-      completed_ps = FALSE,
-      completed_rca = FALSE
-    ))
-  }
-
-  # Get the labels for schol_type from data dictionary
-  schol_type_labels <- rdm_dict %>%
-    filter(field_name == "schol_type") %>%
-    pull(select_choices_or_calculations) %>%
-    strsplit("\\|") %>%
-    unlist() %>%
-    trimws() %>%
-    sapply(function(x) {
-      parts <- strsplit(x, ", ")[[1]]
-      code <- as.numeric(parts[1])
-      label <- parts[2]
-      return(c(code = code, label = label))
-    }) %>%
-    t() %>%
-    as.data.frame(stringsAsFactors = FALSE)
-
-  # Convert codes to numeric for matching
-  schol_type_labels$code <- as.numeric(schol_type_labels$code)
-
-  # Create a new dataframe with the processed data
-  result <- filtered_data %>%
-    mutate(
-      # Map schol_type to labels
-      Scholarship_Type = sapply(schol_type, function(code) {
-        if (is.na(code)) return(NA)
-        label_row <- schol_type_labels[schol_type_labels$code == code, ]
-        if (nrow(label_row) > 0) return(label_row$label[1])
-        return(paste("Type", code))
-      }),
-
-      # Process PS and RCA fields - use vectorized operations
-      PS_Text = ifelse(is.na(schol_ps), NA,
-                       ifelse(schol_ps == 1, "You have completed a Patient Safety Review", NA)),
-
-      RCA_Text = ifelse(is.na(schol_rca), NA,
-                        ifelse(schol_rca == 1, "You have completed a Root Cause Analysis", NA)),
-
-      # Coalesce other fields - need to handle NA values properly
-      Other_Description = pmap_chr(list(schol_qi, schol_res, schol_cit), function(qi, res, cit) {
-        values <- c(qi, res, cit)
-        for (val in values) {
-          if (!is.na(val) && val != "") return(val)
-        }
-        return("")
-      })
-    ) %>%
-    # Combine Description fields
-    mutate(
-      Description = apply(cbind(PS_Text, RCA_Text, Other_Description), 1, function(row) {
-        parts <- row[!is.na(row) & row != ""]
-        if(length(parts) == 0) return("")
-        paste(parts, collapse = " ")
-      })
-    ) %>%
-    # Select only the fields we need
-    select(Scholarship_Type, Description) %>%
-    # Remove rows with NA in Scholarship_Type
-    filter(!is.na(Scholarship_Type))
-
-  # Determine if user has completed Patient Safety Review or Root Cause Analysis
-  completed_ps <- any(!is.na(filtered_data$schol_ps) & filtered_data$schol_ps == 1)
-  completed_rca <- any(!is.na(filtered_data$schol_rca) & filtered_data$schol_rca == 1)
-
-  # Create a clean table without the PS/RCA messages (they'll be shown separately)
-  clean_table <- result %>%
-    mutate(
-      Description = gsub("You have completed a Patient Safety Review", "", Description),
-      Description = gsub("You have completed a Root Cause Analysis", "", Description),
-      Description = trimws(Description)
-    )
-
-  # Return both the processed data and the completion flags
-  return(list(
-    table_data = clean_table,
-    completed_ps = completed_ps,
-    completed_rca = completed_rca
-  ))
-}
-
 # Helper lists for competencies and milestones
 
 
@@ -2794,6 +2696,61 @@ get_milestone_data <- function(rdm_dict_data, subcomp_code) {
   return(as.data.frame(milestone_df))
 }
 
+process_scholarship_data <- function(data, record_id, rdm_dict) {
+  cat("DEBUG: Processing scholarship data for record_id:", record_id, "\n")
+
+  # Filter by record_id
+  filtered_data <- data %>%
+    filter(record_id == record_id)
+
+  cat("DEBUG: After filtering, found", nrow(filtered_data), "rows\n")
+
+  # Skip processing if no data is found
+  if (nrow(filtered_data) == 0) {
+    return(list(
+      table_data = data.frame(
+        Scholarship_Type = character(),
+        Description = character(),
+        stringsAsFactors = FALSE
+      ),
+      completed_ps = FALSE,
+      completed_rca = FALSE
+    ))
+  }
+
+  # Check for Patient Safety and RCA completion - handling both string "Yes" and numeric 1
+  completed_ps <- any(tolower(filtered_data$schol_ps) == "yes" | filtered_data$schol_ps == 1)
+  completed_rca <- any(tolower(filtered_data$schol_rca) == "yes" | filtered_data$schol_rca == 1)
+
+  cat("DEBUG: PS flag =", completed_ps, ", RCA flag =", completed_rca, "\n")
+
+  # Create a display table
+  table_data <- filtered_data %>%
+    mutate(
+      # Use the schema_type as-is since it's already the label
+      Scholarship_Type = schol_type,
+
+      # Create a description based on what's available
+      Description = case_when(
+        !is.na(schol_qi) & schol_qi != "" ~ schol_qi,
+        !is.na(schol_res) & schol_res != "" ~ schol_res,
+        !is.na(schol_cit) & schol_cit != "" ~ schol_cit,
+        !is.na(schol_comm) & schol_comm != "" ~ schol_comm,
+        TRUE ~ "No description available"
+      )
+    ) %>%
+    # Select only needed columns
+    select(Scholarship_Type, Description) %>%
+    # Filter out Patient Safety Review entries
+    filter(Scholarship_Type != "Patient Safety Review")
+
+  # Return the results
+  list(
+    table_data = table_data,
+    completed_ps = completed_ps,
+    completed_rca = completed_rca
+  )
+}
 
 # Updated Scholarship Module UI
 scholarship_module_ui <- function(id, rdm_dict){
@@ -2864,11 +2821,25 @@ scholarship_module_server <- function(id, rdm_dict, record_id, schol_data = NULL
 
     scholarship_results <- reactive({
       req(record_id())
+      cat("DEBUG: Creating scholarship_results for record ID:", record_id(), "\n")
+
       # Use the passed parameter instead of referencing a global variable
       if (is.null(schol_data)) {
-        # ...
+        cat("DEBUG: schol_data is NULL\n")
+        list(
+          table_data = data.frame(
+            Scholarship_Type = "No scholarship activities found",
+            Description = "",
+            stringsAsFactors = FALSE
+          ),
+          completed_ps = FALSE,
+          completed_rca = FALSE
+        )
       } else {
-        process_scholarship_data(schol_data, record_id(), rdm_dict)
+        cat("DEBUG: Processing scholarship data\n")
+        result <- process_scholarship_data(schol_data, record_id(), rdm_dict)
+        cat("DEBUG: Process complete, PS:", result$completed_ps, "RCA:", result$completed_rca, "\n")
+        result
       }
     })
 
@@ -2889,37 +2860,55 @@ scholarship_module_server <- function(id, rdm_dict, record_id, schol_data = NULL
       }
     })
 
-    # Render achievement notifications
-    # Update the achievement notifications rendering:
-    # Update this part in your scholarship_module_server function
+    # Replace the achievement_notifications renderUI with this version
     output$achievement_notifications <- renderUI({
-      req(scholarship_results())
-      # Get completion status
-      completed_ps <- scholarship_results()$completed_ps
-      completed_rca <- scholarship_results()$completed_rca
-      if (!completed_ps && !completed_rca) {
-        return(NULL)  # Don't show anything if neither is completed
+      # Get results
+      results <- scholarship_results()
+      if (is.null(results)) {
+        return(NULL)
       }
 
-      # Create notification messages directly without nesting in additional divs
-      tagList(
-        if(completed_ps) {
-          tags$p(
-            tags$span(icon("check-circle"), class = "text-success"),
-            tags$strong("Achievement: "),
-            "You have completed a Patient Safety Review",
-            class = "alert alert-success p-2 mt-3"
+      # Get the completion flags
+      completed_ps <- results$completed_ps
+      completed_rca <- results$completed_rca
+      cat("DEBUG: PS flag =", completed_ps, ", RCA flag =", completed_rca, "\n")
+
+      # Skip if none are completed
+      if (!isTRUE(completed_ps) && !isTRUE(completed_rca)) {
+        return(NULL)
+      }
+
+      # Build notifications
+      notifications <- tagList()
+
+      if (isTRUE(completed_ps)) {
+        notifications <- tagAppendChild(
+          notifications,
+          tags$div(class = "alert alert-success mt-3",
+                   tags$p(
+                     tags$span(icon("check-circle"), class = "text-success me-2"),
+                     tags$strong("Achievement: "),
+                     "You have completed a Patient Safety Review"
+                   )
           )
-        },
-        if(completed_rca) {
-          tags$p(
-            tags$span(icon("check-circle"), class = "text-success"),
-            tags$strong("Achievement: "),
-            "You have completed a Root Cause Analysis",
-            class = "alert alert-success p-2 mt-3"
+        )
+      }
+
+      if (isTRUE(completed_rca)) {
+        notifications <- tagAppendChild(
+          notifications,
+          tags$div(class = "alert alert-success mt-3",
+                   tags$p(
+                     tags$span(icon("check-circle"), class = "text-success me-2"),
+                     tags$strong("Achievement: "),
+                     "You have completed a Root Cause Analysis"
+                   )
           )
-        }
-      )
+        )
+      }
+
+      # Return the notifications
+      notifications
     })
 
     # Render the type-specific fields UI

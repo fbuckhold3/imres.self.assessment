@@ -309,7 +309,8 @@ ui <- fluidPage(
 
       # ─── Card 4: Scholarship ────────────────────────────────────────────────────────
       div(
-        id    = "section4_card", class = "hidden-card",
+        id = "section4_card",
+        class = "hidden-card",
         card(
           card_header("4. Scholarship"),
           card_body(

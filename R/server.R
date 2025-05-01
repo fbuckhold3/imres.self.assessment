@@ -1,4 +1,18 @@
 server <- function(input, output, session) {
+
+  # Load data when server starts, but cache it for subsequent calls
+  app_data <- ensure_data_loaded()
+
+  # Extract the data elements needed throughout the server function
+  rdm_dict <- app_data$rdm_dict
+  ass_dict <- app_data$ass_dict
+  resident_data <- app_data$resident_data
+  schol_data <- app_data$schol_data
+  miles <- app_data$miles
+  p_miles <- app_data$p_miles
+  s_miles <- app_data$s_miles
+  url <- app_data$url
+
   entering_fields <- c(
     "s_e_fac_assist","s_e_fac_member","s_e_fac_email",
     "s_e_ume_goal1","s_e_ume_goal2","s_e_ume_goal3",
@@ -174,17 +188,31 @@ server <- function(input, output, session) {
   output$scholarship_module_ui <- renderUI({
     req(selected_period())
     if (selected_period() != "Entering Residency")
-      scholarship_table_ui("schol")
+      scholarship_module_ui("schol")
+    else
+      div(
+        p("Scholarship tracking begins after entering residency."),
+        actionButton("schol_skip", "Continue to Next Section", class = "btn-primary")
+      )
   })
 
-  # And modify your scholarship module server call:
-  schol_module <- scholarship_table_server(
+  # Call without the schol_data parameter
+  scholarship_module_server(
     "schol",
-    schol_data = schol_data,  # Make sure this is available in your server function
     rdm_dict = rdm_dict,
-    record_id = record_id
+    record_id = reactive({
+      req(resident_info())
+      fetch_record_id(resident_info(), resident_data, url, rdm_token)
+    })
   )
 
+  observeEvent(input[["schol-next_btn"]], {
+    transition("section4_card", "section5_card")
+  })
+
+  observeEvent(input$schol_skip, {
+    transition("section4_card", "section5_card")
+  })
 
 
   observeEvent(input$open_modal, { req(resident_info()); showEvaluationModal() })
@@ -375,10 +403,6 @@ server <- function(input, output, session) {
     }
   })
 
-  # Add this observer to handle the Next button
-  observeEvent(schol_module$next_clicked(), {
-    transition("section4_card", "section5_card")
-  })
 
   ## Card 5 - Milestone Self assessment:
 

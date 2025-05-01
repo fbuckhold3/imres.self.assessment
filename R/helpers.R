@@ -1795,7 +1795,7 @@ generate_instance_2 <- function(record_id, instrument_name, coach_data = NULL,
     # Pull data directly from REDCap without the problematic parameters
     tryCatch({
       data <- redcap_read(
-        redcap_uri = redcap_uri,
+        redcap_uri = url,
         token = token,
         records = record_id
       )$data

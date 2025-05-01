@@ -20,7 +20,7 @@ server <- function(input, output, session) {
         miles <<- app_data$miles
         p_miles <<- app_data$p_miles
         s_miles <<- app_data$s_miles
-        url <- "https://redcapsurvey.slu.edu/api/"
+        redcap_url <<- "https://redcapsurvey.slu.edu/api/"
         eval_token <<- app_data$eval_token
         rdm_token <<- app_data$rdm_token
         fac_token <<- app_data$fac_token
@@ -236,7 +236,7 @@ server <- function(input, output, session) {
     rdm_dict = rdm_dict,
     record_id = reactive({
       req(resident_info())
-      fetch_record_id(resident_info(), resident_data, url, rdm_token)
+      fetch_record_id(resident_info(), resident_data,  redcap_url, rdm_token)
     })
   )
 
@@ -346,7 +346,7 @@ server <- function(input, output, session) {
         instrument = "s_eval",
         period = period_code,
         data = payload,
-        url = url,
+        url =  redcap_url,
         token = rdm_token
       )
 
@@ -421,7 +421,7 @@ server <- function(input, output, session) {
         instrument = "s_eval",
         period = period_code,
         data = payload,
-        url = url,
+        url =  redcap_url,
         token = rdm_token
       )
 
@@ -625,7 +625,7 @@ server <- function(input, output, session) {
       record_id = record_id(),
       instrument_name = "milestone_selfevaluation_c33c",
       coach_data = miles,
-      redcap_uri = url,
+      redcap_uri =  redcap_url,
       token = rdm_token
     )
 
@@ -641,7 +641,7 @@ server <- function(input, output, session) {
     submission_response <- direct_redcap_import(
       data = submission_data,
       record_id = record_id(),
-      url = url,
+      url =  redcap_url,
       token = rdm_token
     )
 
@@ -722,7 +722,7 @@ server <- function(input, output, session) {
       prev_goals <- fetch_previous_goals(
         record_id = record_id,
         period = prev_period,
-        url = url,
+        url =  redcap_url,
         token = rdm_token
       )
 
@@ -830,7 +830,7 @@ server <- function(input, output, session) {
       instrument = "ilp",  # Your RedCap form name for goals
       period = period_code,
       data = submission_data,
-      url = url,
+      url =  redcap_url,
       token = rdm_token
     )
 

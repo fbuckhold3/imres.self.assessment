@@ -100,7 +100,7 @@ initialize_app_config <- function() {
 
 # Add this to your global.R file after initialize_app_config
 load_imres_data <- function(config) {
-  # Get data dictionaries
+
   rdm_dict <- tryCatch({
     cat("Attempting to get rdm_dict data dictionary...\n")
     result <- get_data_dict(config$rdm_token, config$url)
@@ -111,14 +111,6 @@ load_imres_data <- function(config) {
     NULL
   })
 
-  schol_data <- tryCatch({
-    rdm_dat$scholarship
-  }, error = function(e) {
-    cat("Warning: scholarship data not found in rdm_dat\n")
-    NULL
-  })
-
-
   ass_dict <- tryCatch({
     cat("Attempting to get ass_dict data dictionary...\n")
     result <- get_data_dict(config$eval_token, config$url)
@@ -126,6 +118,34 @@ load_imres_data <- function(config) {
     result
   }, error = function(e) {
     cat("Error getting ass_dict:", e$message, "\n")
+    NULL
+  })
+
+  # Pull forms data first to get rdm_dat
+  rdm_dat <- tryCatch({
+    cat("Pulling forms data...\n")
+    result <- forms_api_pull(config$rdm_token, config$url, 'resident_data', 'faculty_evaluation', 'ilp', 's_eval', 'scholarship')
+    cat("Forms data pulled\n")
+    result
+  }, error = function(e) {
+    cat("Error pulling forms data:", e$message, "\n")
+    NULL
+  })
+
+  # Now access scholarship data after rdm_dat is defined
+  schol_data <- tryCatch({
+    if (is.null(rdm_dat)) {
+      cat("rdm_dat is NULL, cannot extract scholarship data\n")
+      NULL
+    } else if (!("scholarship" %in% names(rdm_dat))) {
+      cat("scholarship not found in rdm_dat keys:", paste(names(rdm_dat), collapse=", "), "\n")
+      NULL
+    } else {
+      cat("Successfully accessed scholarship data\n")
+      rdm_dat$scholarship
+    }
+  }, error = function(e) {
+    cat("Warning: scholarship data not found in rdm_dat:", e$message, "\n")
     NULL
   })
 
@@ -139,10 +159,7 @@ load_imres_data <- function(config) {
     ass_dat <- wrangle_assessment_data(ass_dat)
     cat("Assessment data wrangled\n")
 
-    cat("Pulling forms data...\n")
-    rdm_dat <- forms_api_pull(config$rdm_token, config$url, 'resident_data', 'faculty_evaluation', 'ilp', 's_eval', 'scholarship')
-    cat("Forms data pulled\n")
-
+    # We already have rdm_dat from earlier
     cat("Creating resident data...\n")
     result <- create_res_data(ass_dat, rdm_dat)
     cat("Resident data created with", nrow(result), "rows\n")

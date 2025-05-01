@@ -21,7 +21,27 @@ library(data.table)
 library(purrr)
 library(ggradar)
 
-# Data loading functions - define these directly in global.R
+# In global.R, after your library imports
+
+# Helper function to safely get data dictionary
+safe_get_data_dict <- function(token, url) {
+  if (is.null(token) || token == "") {
+    cat("WARNING: Token is missing or empty, cannot get data dictionary\n")
+    return(NULL)
+  }
+
+  tryCatch({
+    cat("Attempting to get data dictionary with token length:", nchar(token), "\n")
+    result <- get_data_dict(token, url)
+    cat("Successfully retrieved data dictionary with", nrow(result), "rows\n")
+    return(result)
+  }, error = function(e) {
+    cat("ERROR getting data dictionary:", e$message, "\n")
+    return(NULL)
+  })
+}
+
+# Initialize app configuration and tokens
 initialize_app_config <- function() {
   # Set up REDCap API URL
   url <- "https://redcapsurvey.slu.edu/api/"
@@ -69,7 +89,16 @@ initialize_app_config <- function() {
     httr::set_config(httr::config(ssl_verifypeer = FALSE))
   } else {
     # Use config file for local development
-    conf <- config::get(file = "config.yml")
+    conf <- tryCatch({
+      config::get(file = "config.yml")
+    }, error = function(e) {
+      message("Error loading config file: ", e$message)
+      list(
+        eval_token = "",
+        rdm_token = "",
+        fac_token = ""
+      )
+    })
     eval_token <- conf$eval_token
     rdm_token <- conf$rdm_token
     fac_token <- conf$fac_token
@@ -89,78 +118,60 @@ initialize_app_config <- function() {
   )
 }
 
-load_imres_data <- function(config) {
-  # Get data dictionaries
-  rdm_dict <- get_data_dict(config$rdm_token, config$url)
-  ass_dict <- get_data_dict(config$eval_token, config$url)
-
-  # Function to safely pull resident data from REDCap API
-  get_resident_data <- function() {
-    tryCatch({
-      ass_dat <- full_api_pull(config$eval_token, config$url)
-      ass_dat <- wrangle_assessment_data(ass_dat)
-      rdm_dat <- forms_api_pull(config$rdm_token, config$url, 'resident_data', 'faculty_evaluation', 'ilp', 's_eval', 'scholarship')
-      return(create_res_data(ass_dat, rdm_dat))
-    }, error = function(e) {
-      cat("Error in API pull:", e$message, "\n")
-      return(NULL)
-    })
-  }
-
-  # Load resident data
-  resident_data <- get_resident_data()
-
-  # Load scholarship data
-  schol_data <- tryCatch({
-    redcap_read(
-      redcap_uri = config$url,
-      token = config$rdm_token,
-      forms = "scholarship"
-    )$data
-  }, error = function(e) {
-    cat("Error loading scholarship data:", e$message, "\n")
-    return(NULL)
-  })
-
-  # Step 1: Pull all milestone data
-  miles <- get_all_milestones(config$rdm_token, config$url)
-
-  # Step 2: Fill in resident data (name, record_id)
-  miles <- fill_missing_resident_data(miles)
-
-  # Step 3: Process program milestones
-  p_miles <- process_milestones(miles, type = "program")
-
-  # Step 4: Process self milestones
-  s_miles <- process_milestones(miles, type = "self")
-
-  # Return all the data
-  list(
-    rdm_dict = rdm_dict,
-    ass_dict = ass_dict,
-    resident_data = resident_data,
-    schol_data = schol_data,
-    miles = miles,
-    p_miles = p_miles,
-    s_miles = s_miles,
-    url = config$url,
-    eval_token = config$eval_token,
-    rdm_token = config$rdm_token,
-    fac_token = config$fac_token
-  )
-}
-
-# Define a variable to hold app data
+# Global storage for app data
 app_data_store <- NULL
 
 # Function to ensure data is loaded
 ensure_data_loaded <- function() {
   if (is.null(app_data_store)) {
-    # Only initialize data when needed
+    cat("Starting data load process...\n")
+
+    # Get configuration with tokens
     config <- initialize_app_config()
-    app_data_store <<- load_imres_data(config)
+
+    # First, get the data dictionaries
+    rdm_dict <- safe_get_data_dict(config$rdm_token, config$url)
+    ass_dict <- safe_get_data_dict(config$eval_token, config$url)
+
+    # Only continue if we have the dictionaries
+    if (is.null(rdm_dict) || is.null(ass_dict)) {
+      cat("CRITICAL ERROR: Failed to load data dictionaries\n")
+      return(NULL)
+    }
+
+    # Continue with other data loading
+    # ... rest of your loading code
+
+    # Store the results
+    app_data_store <<- list(
+      rdm_dict = rdm_dict,
+      ass_dict = ass_dict,
+      url = config$url,
+      eval_token = config$eval_token,
+      rdm_token = config$rdm_token,
+      fac_token = config$fac_token
+      # Add other data as loaded
+    )
   }
+
   return(app_data_store)
+}
+
+# Try to load data now
+cat("Pre-loading data in global.R...\n")
+app_data <- ensure_data_loaded()
+
+# Make data globally available if loaded
+if (!is.null(app_data)) {
+  rdm_dict <- app_data$rdm_dict
+  ass_dict <- app_data$ass_dict
+  url <- app_data$url
+  eval_token <- app_data$eval_token
+  rdm_token <- app_data$rdm_token
+  fac_token <- app_data$fac_token
+  cat("Global variables created from app_data\n")
+} else {
+  cat("WARNING: app_data is NULL, global variables not created\n")
 }
 
 # Helper lists for competencies and milestones

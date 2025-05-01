@@ -1,19 +1,34 @@
 server <- function(input, output, session) {
 
-  # Load data when server starts, but cache it for subsequent calls
-  app_data <- ensure_data_loaded()
+  if (!exists("rdm_dict") || is.null(rdm_dict)) {
+    showNotification("Loading required data...", type = "message", duration = NULL, id = "loading")
 
-  # Extract the data elements needed throughout the server function
-  rdm_dict <- app_data$rdm_dict
-  ass_dict <- app_data$ass_dict
-  resident_data <- app_data$resident_data
-  schol_data <- app_data$schol_data
-  miles <- app_data$miles
-  p_miles <- app_data$p_miles
-  s_miles <- app_data$s_miles
-  url <- app_data$url
-  eval_token <- app_data$eval_token
-  rdm_token <- app_data$rdm_token
+    # Try loading data again
+    app_data <- ensure_data_loaded()
+
+    if (!is.null(app_data)) {
+      # Create variables in the server environment
+      rdm_dict <<- app_data$rdm_dict
+      ass_dict <<- app_data$ass_dict
+      url <<- app_data$url
+      eval_token <<- app_data$eval_token
+      rdm_token <<- app_data$rdm_token
+      fac_token <<- app_data$fac_token
+
+      # Remove the notification
+      removeNotification(id = "loading")
+      showNotification("Data loaded successfully", type = "message", duration = 3)
+    } else {
+      # Show an error
+      removeNotification(id = "loading")
+      showNotification(
+        "Critical error: Failed to load required data. Please check your tokens and configuration.",
+        type = "error",
+        duration = NULL
+      )
+    }
+  }
+}, once = TRUE)
 
   entering_fields <- c(
     "s_e_fac_assist","s_e_fac_member","s_e_fac_email",

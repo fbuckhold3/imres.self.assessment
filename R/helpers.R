@@ -2794,7 +2794,7 @@ get_milestone_data <- function(rdm_dict_data, subcomp_code) {
   return(as.data.frame(milestone_df))
 }
 
-# Updated Scholarship Module UI
+
 # Updated Scholarship Module UI
 scholarship_module_ui <- function(id){
   ns <- NS(id)
@@ -2847,7 +2847,7 @@ scholarship_module_ui <- function(id){
 }
 
 
-scholarship_module_server <- function(id, rdm_dict, record_id) {
+scholarship_module_server <- function(id, rdm_dict, record_id, schol_data = NULL) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 

@@ -231,14 +231,19 @@ server <- function(input, output, session) {
       )
   })
 
+  cat("Before schol_data access: ", exists("schol_data"), "\n")
+  cat("schol_data is NULL: ", is.null(schol_data), "\n")
+  if (!is.null(schol_data)) cat("schol_data rows: ", nrow(schol_data), "\n")
+
   # Call without the schol_data parameter
   scholarship_module_server(
     "schol",
     rdm_dict = rdm_dict,
     record_id = reactive({
       req(resident_info())
-      fetch_record_id(resident_info(), resident_data,  redcap_url, rdm_token)
-    })
+      fetch_record_id(resident_info(), resident_data, redcap_url, rdm_token)
+    }),
+    schol_data = schol_data  # Add this line
   )
 
   observeEvent(input[["schol-next_btn"]], {

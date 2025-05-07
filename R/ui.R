@@ -95,31 +95,59 @@ ui <- fluidPage(
 ")),
 
   # Add this somewhere in your UI, probably near the top
-  div(
-    class = "hidden-card",
-    textInput("is_valid_code", label = NULL, value = FALSE)
-  ),
-
   # Initial access code screen
   div(
     id = "access_code_screen",
     class = "center-screen",
+    style = "max-width: 1000px; width: 90%;", # Twice as wide
     div(
       class = "access-code-container",
-      h1("IMSLU Resident Self-Assessment Form", class = "mb-4"),
-      div(
-        class = "mb-3",
-        textInput("access_code_input", "Access Code:", placeholder = "ABC123")
+      h1("IMSLU Resident Self-Assessment Form", class = "mb-4 text-center",
+         style = "color: #0072B2; font-weight: bold;"),
+
+      div(class = "p-4 bg-light rounded mb-4",
+          h4("The following is a semi-annual self-assessment for residents in the SSM-SLUH Internal Medicine Program.",
+             class = "mb-3"),
+          p("This assessment will help in developing your own 'Individualized Learning Program (ILP)'.
+        The data collected will be anonymized and used by our Program Evaluation Committee (PEC)
+        to improve the program.", class = "mb-3", style = "font-size: 1.1rem;"),
+          p("Please dedicate about 20-30 minutes to complete this assessment.
+        The more effort you put in, the better we can coach you.",
+            class = "mb-3", style = "font-size: 1.1rem;"),
+          p("If you encounter any issues with this application, please contact Dr. Buckhold.
+        While much of this was developed with the assistance of AI, he will do his best to resolve any problems.",
+            style = "font-style: italic; font-size: 1rem;")
       ),
+
       div(
-        class = "mb-3",
-        actionButton("validate_code", "Submit", class = "btn-primary")
-      ),
-      conditionalPanel(
-        condition = "input.access_code_input && !input.is_valid_code",
-        p("❌ Invalid access code, try again", style = "color:red;")
+        class = "mb-4 p-4 border rounded bg-white",
+        h4("Enter Your Access Code", class = "mb-3 text-center"),
+        div(
+          class = "mb-3",
+          textInput("access_code_input", NULL, placeholder = "Enter your access code (e.g., ABC123)",
+                    width = "100%")
+        ),
+        div(
+          class = "text-center",
+          actionButton("validate_code", "Submit",
+                       class = "btn-primary btn-lg",
+                       style = "min-width: 150px;")
+        ),
+        conditionalPanel(
+          condition = "input.access_code_input && input.is_valid_code === false",
+          div(
+            class = "mt-3 p-2 bg-danger text-white rounded text-center",
+            icon("exclamation-triangle"),
+            " Invalid access code, please try again"
+          )
+        )
       )
     )
+  ),
+
+  div(
+    class = "hidden-card",
+    textInput("is_valid_code", label = NULL, value = FALSE)
   ),
 
   div(
@@ -162,27 +190,6 @@ ui <- fluidPage(
           "This should reflect your current year, and the time - if doing in the Fall/Winter, pick 'mid', ",
           "if in the Spring pick 'end' or 'graduating'. Incoming interns - do 'Entering Residency'. ",
           "You're smart, you can figure it out."
-        )
-      ),
-
-
-      # Intro Card
-      div(
-        id    = "intro_card",
-        class = "hidden-card",
-        card(
-          card_header("Welcome & Intern Intro"),
-          card_body(
-            p("Welcome to the IMSLU Residency Program! The following serves as a way to introduce yourself to the program and for us to get an understanding of your strengths and opportunities for improvement. Early in your intern year, we will meet to review this and discuss your transition to resident."),
-            p("The name shown here is used for data collection. If incorrect, email Dr. Buckhold at fred.buckhold@slucare.ssmhealth.com."),
-            p("The following three questions are part of a grant‑funded data collection for Missouri residency positions."),
-
-            radioButtons("hs_mo",     "Did you get any of your high school education in Missouri?", choices = c("Yes","No"), inline = TRUE),
-            radioButtons("college_mo","Did you have any college education in Missouri?",              choices = c("Yes","No"), inline = TRUE),
-            radioButtons("med_mo",    "Did you go to medical school in Missouri?",                   choices = c("Yes","No"), inline = TRUE),
-
-            actionButton("intro_next", "Next Section", class = "btn-primary")
-          )
         )
       ),
 
@@ -364,56 +371,47 @@ ui <- fluidPage(
         )
       ),
 
+      # _____ Card 6: Milestone-based Goal Setting and Review
       div(
         id = "section6_card",
         class = "hidden-card",
         card(
-          card_header("Review and Implement New Goals"),
+          card_header("Milestone-based Goal Setting and Review"),
           card_body(
-            fluidRow(
-              # Left column (4/12) - Milestone Visualization
-              column(
-                width = 4,
-                div(
-                  class = "milestone-visualization p-2",
-                  h4("Your Current Milestone Assessment", class = "mb-3"),
-                  plotOutput("current_milestone_plot", height = "380px")
-                )
-              ),
+            # Introductory text
+            div(
+              class = "intro-text mb-4",
+              p("As part of the development of your Individualized Learning Plan (\"ILP\"), we ask that you make three goals based on the Milestones you just self-reflected on. A spider plot is displayed to your right, compared to the median of what other residents at your level of training have self-rated in the past. Take a look at places were you perhaps lower than average, or a place you would like to improve."),
 
-              # Right column (8/12) - Goal Setting
-              column(
-                width = 8,
-                div(
-                  class = "goal-setting p-2",
-                  h4("Set Development Goals", class = "mb-3"),
-                  p("Based on your milestone assessment, select goals to focus on for the upcoming period."),
-                  goalSettingUI("goals"),  # Goal setting module
+              br(),
 
-                  # Submit button moved inside the right column
-                  div(
-                    class = "text-center mt-4",
-                    actionButton("submit", "Submit Self-Assessment", class = "btn-success btn-lg")
-                  )
-                )
-              )
+              p("The purpose of this is to identify a milestone you think you can reach in the next six months. They are in 3 groupings - Patient Care / Medical Knowledge, Systems Based Practice / Practice-Based Learning, and Professionalism / Interpersonal Communication Skills. As you work through this, you will see the milestones presented."),
+
+              br(),
+
+              p("The last points: 1) Milestones often have rows - the selector below will ask for different rows and spell out the actual milestones you need to reach; 2) On selection, you may see that the first milestone doesn't display. Just click another one and come back. 3) As this is new, you may be asked if you reached your last Milestone goal, which you may not have set yet. Just say no, and explain why. Dr. B had a lot of trouble getting this to work..."),
+
+              hr()
+            ),
+
+            # Goal Setting Module UI
+            goalSettingUI("goals")
+
+
             )
           )
-        )
-      ),  # End of Card 6
-
-      # Completion Card
+        ),
+      # Card 7: Completion
       div(
-        id = "completion_card",
+        id    = "completion_card",
         class = "hidden-card",
-        card(
-          card_header("Self-Assessment Completed"),
-          card_body(
-            p("Thank you for completing your self-assessment!"),
-            p("Your responses have been recorded.")
-          )
+        div(
+          class = "center-screen",
+          h2("🎉 All done!"),
+          p("Thank you—your self‑assessment and ILP goals have been submitted."),
+          actionButton("finish_back_to_top", "Back to Top", class = "btn-primary")
         )
-      )  # End of completion card
+      )# End of completion card
     )  # End of container mt-4
   )  # End of main_app_content
 )  # End of fluidPage

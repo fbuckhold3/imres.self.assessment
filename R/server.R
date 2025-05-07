@@ -7,6 +7,11 @@ server <- function(input, output, session) {
   # Load data immediately at server start
   app_data <- ensure_data_loaded()
 
+  ilp_data <- reactive({
+    req(app_data$ilp_data)
+    app_data$ilp_data
+  })
+
   # Check if data loaded successfully
   if (!is.null(app_data) && !is.null(app_data$resident_data)) {
     # Create variables
@@ -45,7 +50,59 @@ server <- function(input, output, session) {
     data_loaded <- reactiveVal(FALSE)
   }
 
+  # Helper lists for competencies and milestones
+  subcompetency_maps <- list(
+    PC = list(
+      "1" = "History",
+      "2" = "Physical Examination",
+      "3" = "Clinical Reasoning",
+      "4" = "Patient Management - Inpatient",
+      "5" = "Patient Management - Outpatient",
+      "6" = "Digital Health"
+    ),
+    MK = list(
+      "1" = "Applied Foundational Sciences",
+      "2" = "Therapeutic Knowledge",
+      "3" = "Knowledge of Diagnostic Testing"
+    ),
+    SBP = list(
+      "1" = "Patient Safety and Quality Improvement",
+      "2" = "System Navigation for Patient-Centered Care",
+      "3" = "Physician Role in Health Care Systems"
+    ),
+    PBLI = list(
+      "1" = "Evidence-Based and Informed Practice",
+      "2" = "Reflective Practice and Commitment to Personal Growth"
+    ),
+    PROF = list(
+      "1" = "Professional Behavior",
+      "2" = "Ethical Principles",
+      "3" = "Accountability/Conscientiousness",
+      "4" = "Knowledge of Systemic and Individual Factors of Well-Being"
+    ),
+    ICS = list(
+      "1" = "Patient- and Family-Centered Communication",
+      "2" = "Interprofessional and Team Communication",
+      "3" = "Communication within Health Care Systems"
+    )
+  )
 
+  milestone_levels <- list(
+    "1" = "Novice",
+    "2" = "Advanced beginner",
+    "3" = "Competent",
+    "4" = "Proficient",
+    "5" = "Expert"
+  )
+
+  competency_list <- list(
+    PC = "Patient Care",
+    MK = "Medical Knowledge",
+    SBP = "Systems-Based Practice",
+    PBLI = "Practice-Based Learning and Improvement",
+    PROF = "Professionalism",
+    ICS = "Interpersonal and Communication Skills"
+  )
 
   entering_fields <- c(
     "s_e_fac_assist","s_e_fac_member","s_e_fac_email",
@@ -86,7 +143,6 @@ server <- function(input, output, session) {
     "s_e_prog_plus", "s_e_prog_delta", "s_e_progconf", "s_e_progfeed"
   )
 
-
   # Your existing access_code reactive
   access_code <- reactive({
     query <- parseQueryString(session$clientData$url_search)
@@ -94,20 +150,32 @@ server <- function(input, output, session) {
     else trimws(input$access_code_input)
   })
 
-  # Handle the submit button click
   observeEvent(input$validate_code, {
     req(access_code())
     is_valid <- access_code() %in% resident_data$access_code
     if(is_valid) {
+      # Hide access screen completely
       shinyjs::hide("access_code_screen")
+
+      # Show main content
       shinyjs::show("main_app_content")
+
+      # Make sure intro_card is hidden
+      shinyjs::hide("intro_card")
+
+      # Make sure period selection is visible
+      shinyjs::show("period_selection_card")
+      shinyjs::show("period_help_text")
+
+      # Update validation state
+      updateTextInput(session, "is_valid_code", value = TRUE)
     } else {
       # Update validation state
       updateTextInput(session, "is_valid_code", value = FALSE)
     }
   })
 
-  # Add validation to your existing reactives
+  # Resident info reactive
   resident_info <- reactive({
     req(data_loaded())
     validate(need(exists("resident_data") && !is.null(resident_data),
@@ -119,6 +187,7 @@ server <- function(input, output, session) {
     df$name[1]
   })
 
+  # Coach info reactive
   coach_info <- reactive({
     req(access_code())
     df <- resident_data %>% filter(access_code == access_code())
@@ -129,7 +198,7 @@ server <- function(input, output, session) {
   output$resident_name <- renderText({ req(resident_info()); paste("Self Evaluation for:", resident_info()) })
   output$coach_name <- renderText({ req(coach_info()); paste("Coach is Dr:", coach_info()) })
 
-  # record_id reactive - move this after resident_info is defined
+  # record_id reactive
   record_id <- reactive({
     req(access_code())
     df <- resident_data %>% filter(access_code == access_code())
@@ -137,7 +206,7 @@ server <- function(input, output, session) {
     df$record_id[1]
   })
 
-  # Add validation observer - move after record_id reactive
+  # Add validation observer
   observe({
     req(record_id())
     validate(need(!is.null(record_id()) && length(record_id()) > 0, "No record_id found!"))
@@ -191,9 +260,6 @@ server <- function(input, output, session) {
     current_milestone_data = NULL
   )
 
-  # Main render function for Card 3 UI
-
-
   # Render UI outputs
   output$card2UI <- renderUI({
     req(selected_period())
@@ -205,6 +271,7 @@ server <- function(input, output, session) {
       other_fields        # Fields defined above
     )
   })
+
   # Function to store the program feedback data
   store_program_feedback <- function() {
     feedback_data <- list(
@@ -219,6 +286,7 @@ server <- function(input, output, session) {
       responses[[field]] <- feedback_data[[field]]
     }
   }
+
   output$card3UI <- renderUI({
     render_card3_ui(rdm_dict)
   })
@@ -244,18 +312,7 @@ server <- function(input, output, session) {
     }
   })
 
-  # After loading data but before module call
-  cat("DEBUG - At module call time:\n")
-  cat("DEBUG - schol_data exists:", exists("schol_data"), "\n")
-  cat("DEBUG - schol_data is NULL:", is.null(schol_data), "\n")
-  if (!is.null(schol_data)) {
-    cat("DEBUG - schol_data class:", class(schol_data), "\n")
-    if (is.data.frame(schol_data)) {
-      cat("DEBUG - schol_data dims:", nrow(schol_data), "x", ncol(schol_data), "\n")
-    }
-  }
-
-  # Call without the schol_data parameter
+  # Scholarship module server
   scholarship_module_server(
     "schol",
     rdm_dict = rdm_dict,
@@ -263,9 +320,10 @@ server <- function(input, output, session) {
       req(resident_info())
       fetch_record_id(resident_info(), resident_data, redcap_url, rdm_token)
     }),
-    schol_data = schol_data  # Add this line
+    schol_data = schol_data
   )
 
+  # Various button observers for navigation
   observeEvent(input[["schol-next_btn"]], {
     transition("section4_card", "section5_card")
   })
@@ -274,12 +332,18 @@ server <- function(input, output, session) {
     transition("section4_card", "section5_card")
   })
 
+  observeEvent(input$open_modal, {
+    req(resident_info())
+    showEvaluationModal()
+  })
 
-  observeEvent(input$open_modal, { req(resident_info()); showEvaluationModal() })
-  observeEvent(input$reopen_modal, { req(resident_info()); showEvaluationModal() })
+  observeEvent(input$reopen_modal, {
+    req(resident_info())
+    showEvaluationModal()
+  })
 
   # ── Navigation flow logic ─────────────────────────────────────────────
-  # Consolidated period selection and navigation handler
+  # Period selection and navigation handler
   observeEvent(input$period_next, {
     req(selected_period())
 
@@ -304,7 +368,7 @@ server <- function(input, output, session) {
     }
   })
 
-  # Add this observer for the intro_next button (place it near your other observeEvent handlers)
+  # Intro next button observer
   observeEvent(input$intro_next, {
     # Check that Missouri education questions are answered
     req(input$hs_mo, input$college_mo, input$med_mo)
@@ -318,6 +382,7 @@ server <- function(input, output, session) {
     transition("intro_card", "section2_card")
   })
 
+  # Section 1 next button observer
   observeEvent(input$section1_next, {
     req(input$plus, input$delta)
     responses$s_e_plus  <- input$plus
@@ -325,6 +390,7 @@ server <- function(input, output, session) {
     transition("section1_card", "section2_card")
   })
 
+  # Section 2 next button observer
   observeEvent(input$section2_next, {
     # Check if this is the entering residency flow
     if (rv$flow_path == "entering_residency") {
@@ -396,7 +462,7 @@ server <- function(input, output, session) {
     }
   })
 
-  # For standard flow - observe the section3_next button
+  # Section 3 next button observer
   observeEvent(input$section3_next, {
     # This handles the standard flow submission after section 3
     if (rv$flow_path == "standard") {
@@ -463,9 +529,7 @@ server <- function(input, output, session) {
     }
   })
 
-
-  ## Card 5 - Milestone Self assessment:
-
+  # Card 5 - Milestone Self assessment:
   observe({
     req(selected_period(), resident_info())
 
@@ -476,11 +540,10 @@ server <- function(input, output, session) {
     if (!is.na(prev_period)) {
       # Debug logging
       message(paste("Loading milestone data for previous period:", prev_period))
-
     }
   })
 
-  # 2. Render the previous self-assessment plot
+  # Render the previous self-assessment plot
   output$previous_self_plot <- renderPlot({
     req(selected_period(), resident_info())
 
@@ -509,7 +572,7 @@ server <- function(input, output, session) {
     }
   })
 
-  # 3. Render the previous program assessment plot
+  # Render the previous program assessment plot
   output$previous_program_plot <- renderPlot({
     req(selected_period(), resident_info())
 
@@ -544,32 +607,51 @@ server <- function(input, output, session) {
     }
   })
 
+  # Process current milestone data function
+  process_current_milestone <- function(milestone_scores, resident_name, current_period) {
+    # Extract the milestone scores
+    scores <- milestone_scores$scores()
 
+    # Convert scores from module format (PC_1) to data format (PC1)
+    converted_scores <- list()
+    for (milestone_name in names(scores)) {
+      # Convert milestone names to match the expected format (e.g., "PC_1" to "PC1")
+      column_name <- gsub("_", "", milestone_name)
+      converted_scores[[column_name]] <- as.numeric(scores[[milestone_name]])
+    }
 
-  output$mainImage <- renderImage({
-    req(currentImageFile())
-
-    # The src should use the resource path we defined
-    list(
-      src = file.path("imres-images", currentImageFile()),
-      width = 1200,
-      height = "auto",
-      alt = paste("Image", state$currentImageIndex)
+    # Create a data frame with the current scores
+    current_data <- data.frame(
+      name = resident_name,
+      period = current_period,
+      stringsAsFactors = FALSE
     )
-  }, deleteFile = FALSE)
 
-  # 1) drop the milestone UI into card 5
+    # Add all milestone scores to the data frame
+    for (milestone_name in names(converted_scores)) {
+      current_data[[milestone_name]] <- converted_scores[[milestone_name]]
+    }
+
+    # Add required fields
+    current_data$mile_date <- format(Sys.Date(), "%Y-%m-%d")
+    current_data$record_id <- "current"
+
+    return(current_data)
+  }
+
+  # Drop the milestone UI into card 5
   output$milestone_module_ui <- renderUI({
     req(selected_period())
     mod_miles_rating_ui("miles")
   })
 
-  # 2) instantiate your module exactly once
+  # Instantiate milestone module
   miles_mod <- mod_miles_rating_server(
     "miles",
     period = selected_period
   )
 
+  # Handle milestone completion
   observeEvent(input[["miles-done"]], {
     req(miles_mod$scores(), selected_period(), resident_info())
     raw_sel  <- miles_mod$scores()
@@ -621,8 +703,7 @@ server <- function(input, output, session) {
       "Graduating" = "6"
     )
 
-
-    # Create a direct submission dataframe (similar to your other app)
+    # Create a direct submission dataframe
     submission_data <- data.frame(
       record_id = record_id(),
       redcap_repeat_instrument = "milestone_selfevaluation_c33c",
@@ -655,8 +736,6 @@ server <- function(input, output, session) {
       token = rdm_token
     )
 
-    # Helper lists for competencies and milestones
-
     # Set the instance number
     submission_data$redcap_repeat_instance <- as.numeric(instance_number)
 
@@ -671,19 +750,37 @@ server <- function(input, output, session) {
       token = rdm_token
     )
 
-    # Process the current milestone data for visualization in Card 6
     rv$current_milestone_data <- process_current_milestone(
-      miles_mod,
-      resident_info(),
-      selected_period()
+      milestone_scores = miles_mod,
+      resident_name = resident_info(),
+      current_period = selected_period()
     )
+
+    # Now add this code to combine with median data
+    # After setting rv$current_milestone_data
+    if (!is.null(s_miles)) {
+      # Get median data for the same period
+      median_data <- s_miles %>%
+        filter(name == "Median", period == selected_period())
+
+      if (nrow(median_data) > 0) {
+        # Make sure both datasets have compatible columns
+        common_cols <- intersect(names(rv$current_milestone_data), names(median_data))
+
+        # Combine the data
+        rv$current_milestone_data <- bind_rows(
+          rv$current_milestone_data[, common_cols],
+          median_data[, common_cols]
+        )
+      }
+    }
 
     if (!submission_response$success) {
       showNotification(paste("Save failed:", submission_response$outcome_message), type = "error", duration = NULL)
       return()
     } else {
       showNotification("Milestone self-evaluation saved!", type = "message", duration = 5)
-      if (selected_period() == "Entering Residency"){
+      if (selected_period() == "Entering Residency") {
         transition("section5_card", "completion_card")
       } else {
         transition("section5_card", "section6_card")
@@ -691,184 +788,237 @@ server <- function(input, output, session) {
     }
   })
 
-  # Render the current milestone plot
-  output$current_milestone_plot <- renderPlot({
-    req(rv$current_milestone_data, selected_period())
-
-    # Get median data for comparison
-    median_data <- get_median_data(s_miles, selected_period())
-
-    # Prepare the plot data
-    plot_data <- prepare_milestone_plot_data(rv$current_milestone_data, median_data)
-
-    # Check if we have valid data to plot
-    if (nrow(plot_data) == 0) {
-      return(
-        ggplot() +
-          annotate("text", x = 0.5, y = 0.5,
-                   label = "No milestone data available",
-                   color = "red", size = 5) +
-          theme_void()
-      )
-    }
-
-    # Use the miles_plot function with the prepared data
-    tryCatch({
-      # Call miles_plot with the prepared dataset
-      miles_plot(plot_data, resident_info(), selected_period())
-    }, error = function(e) {
-      message(paste("Error rendering current milestone plot:", e$message))
-
-      # Return an error plot
-      ggplot() +
-        annotate("text", x = 0.5, y = 0.5,
-                 label = paste("Error:", e$message),
-                 color = "red", size = 4) +
-        theme_void()
-    })
-  })
-
+  # Initialize the goals module
   goals_mod <- goalSettingServer(
     "goals",
-    rdm_dict,
-    subcompetency_maps,
-    competency_list,
-    milestone_levels
+    rdm_dict_data = rdm_dict,
+    subcompetency_maps = subcompetency_maps,
+    competency_list = competency_list,
+    milestone_levels = milestone_levels,
+    current_milestone_data = reactive({ rv$current_milestone_data }),
+    resident_info = resident_info,
+    selected_period = selected_period
   )
+
+  # Load previous goals if available
   observe({
-    req(selected_period(), resident_info())
+    req(app_data, record_id(), selected_period(), goals_mod)
+    cat("Debug: Loading previous goals\n")
 
     # Get the previous period
     prev_period <- get_previous_period(selected_period())
 
-    if (!is.na(prev_period)) {
-      record_id <- fetch_record_id(resident_info(), NULL, url, rdm_token)
-
-      # Fetch previous goals from REDCap
-      prev_goals <- fetch_previous_goals(
-        record_id = record_id,
-        period = prev_period,
-        url =  redcap_url,
-        token = rdm_token
+    if(!is.na(prev_period) && !is.null(app_data$ilp_data)) {
+      prev_goals <- load_previous_goals(
+        ilp_data = app_data$ilp_data,
+        record_id = record_id(),
+        current_period = prev_period  # Use previous period to fetch previous goals
       )
 
-      if (!is.null(prev_goals)) {
-        # Update the goal module with previous data
-        # This would require adding an update method to the module
-        updateGoalModule(
-          session = session,
-          id = "goals",
-          prev_data = prev_goals
-        )
+      if(!is.null(prev_goals)) {
+        goals_mod$set_previous_goals(prev_goals)
+        cat("Debug: Previous goals set\n")
+      } else {
+        cat("Debug: No previous goals found\n")
       }
     }
   })
 
+  # Simplified ILP submission function
+  process_ilp_submission <- function(goals_mod, record_id, period, redcap_url, token) {
+    # Get responses from goals module
+    resp <- goals_mod$get_responses()
+    message("DEBUG: Got responses from goals module")
 
-  # Modify your submit handler to include the goals data
-  observeEvent(input$submit, {
-    req(goals_mod$all_selections())
-    validate(need(record_id(), "No record_id found!"))
+    # Get period code
+    period_code <- get_ccc_session(period)
 
-    # Get the period code
-    period_code <- get_ccc_session(selected_period())
-
-    # Get goals data from the module
-    goals_data <- goals_mod$all_selections()
-
-    # Create base submission data
-    submission_data <- list(
-      record_id = record_id(),
-      ilp_period = period_code,
-
-      # PC/MK Goal review data
-      prior_goal_pcmk = goals_data$pcmk$review$had_prior_goal,
-      review_q_pcmk = goals_data$pcmk$review$progress,
-      review_q2_pcmk = goals_data$pcmk$review$factors,
-      goal_pcmk = goals_data$pcmk$code,
-      how_pcmk = goals_data$pcmk$goal$how,
-
-      # SBP/PBLI Goal review data
-      prior_goal_sbppbl = goals_data$sbp_pbli$review$had_prior_goal,
-      review_q_sbppbl = goals_data$sbp_pbli$review$progress,
-      review_q2_sbppbl = goals_data$sbp_pbli$review$factors,
-      goal_sbppbl = goals_data$sbp_pbli$code,
-      how_sbppbl = goals_data$sbp_pbli$goal$how,
-
-      # PROF/ICS Goal review data
-      prior_goal_profics = goals_data$prof_ics$review$had_prior_goal,
-      review_q_profics = goals_data$prof_ics$review$progress,
-      review_q2_profics = goals_data$prof_ics$review$factors,
-      goal_profics = goals_data$prof_ics$code,
-      how_profics = goals_data$prof_ics$goal$how
+    # Create basic payload
+    payload <- list(
+      record_id = record_id,
+      ilp_date = format(Sys.Date(), "%Y-%m-%d"),
+      year_resident = period_code,
+      redcap_repeat_instrument = "ilp"
     )
 
-    # Add milestone-specific level selections
-    # For PC/MK
-    if (!is.null(goals_data$pcmk$goal) && !is.null(goals_data$pcmk$subcomp_code)) {
-      comp_code <- tolower(goals_data$pcmk$subcomp_code)
-      row_id <- goals_data$pcmk$goal$row_id
-      level <- goals_data$pcmk$goal$level
-      field_name <- paste0(comp_code, "_r", row_id)
-      submission_data[[field_name]] <- level
+    message("DEBUG: Building payload for period code: ", period_code)
+
+    # Prepare mapping vectors
+    pcmk_vec    <- c(names(subcompetency_maps$PC),    names(subcompetency_maps$MK))
+    sbppbl_vec  <- c(names(subcompetency_maps$SBP),   names(subcompetency_maps$PBLI))
+    profics_vec <- c(names(subcompetency_maps$PROF),  names(subcompetency_maps$ICS))
+
+    # Process each group of competencies
+    for (grp in c("pcmk", "sbppbl", "profics")) {
+      g <- resp[[grp]]
+      if (is.null(g)) {
+        message("DEBUG: No data for group ", grp)
+        next
+      }
+
+      message("DEBUG: Processing group ", grp)
+
+      # Add fields to payload
+      fields_to_add <- list(
+        # Basic fields
+        had_prior_goal = g$had_prior_goal,
+        review = g$review,
+        milestone_desc = g$milestone_description,
+        selected_level = g$selected_level,
+        selected_row = g$selected_row,
+        how_to_achieve = g$how_to_achieve,
+        subcompetency = g$subcompetency
+      )
+
+      # Map fields to REDCap field names based on group
+      if (grp == "pcmk") {
+        payload[["prior_goal_pcmk"]] <- fields_to_add$had_prior_goal
+        payload[["review_q_pcmk"]] <- fields_to_add$review
+        payload[["review_q2_pcmk"]] <- fields_to_add$milestone_desc
+        payload[["goal_pcmk"]] <- as.character(match(fields_to_add$subcompetency, pcmk_vec))
+        payload[["goal_level_pcmk"]] <- fields_to_add$selected_level
+        payload[["goal_level_r_pcmk"]] <- fields_to_add$selected_row
+        payload[["how_pcmk"]] <- fields_to_add$how_to_achieve
+
+        # Set matrix cell
+        if (startsWith(fields_to_add$subcompetency, "PC")) {
+          cell <- paste0("pc", substr(fields_to_add$subcompetency, 3, 3), "_r", fields_to_add$selected_row)
+        } else if (startsWith(fields_to_add$subcompetency, "MK")) {
+          cell <- paste0("mk", substr(fields_to_add$subcompetency, 3, 3), "_r", fields_to_add$selected_row)
+        }
+        payload[[cell]] <- as.character(fields_to_add$selected_level)
+        message("DEBUG: Set matrix cell: ", cell, " = ", payload[[cell]])
+      }
+      else if (grp == "sbppbl") {
+        payload[["prior_goal_sbppbl"]] <- fields_to_add$had_prior_goal
+        payload[["review_q_sbppbl"]] <- fields_to_add$review
+        payload[["review_q2_sbppbl"]] <- fields_to_add$milestone_desc
+        payload[["goal_sbppbl"]] <- as.character(match(fields_to_add$subcompetency, sbppbl_vec))
+        payload[["goal_level_sbppbl"]] <- fields_to_add$selected_level
+        payload[["goal_r_sbppbl"]] <- fields_to_add$selected_row
+        payload[["how_sbppbl"]] <- fields_to_add$how_to_achieve
+
+        # Set matrix cell
+        if (startsWith(fields_to_add$subcompetency, "SBP")) {
+          cell <- paste0("sbp", substr(fields_to_add$subcompetency, 4, 4), "_r", fields_to_add$selected_row)
+        } else if (startsWith(fields_to_add$subcompetency, "PBLI")) {
+          cell <- paste0("pbl", substr(fields_to_add$subcompetency, 5, 5), "_r", fields_to_add$selected_row)
+        }
+        payload[[cell]] <- as.character(fields_to_add$selected_level)
+        message("DEBUG: Set matrix cell: ", cell, " = ", payload[[cell]])
+      }
+      else if (grp == "profics") {
+        payload[["prior_goal_profics"]] <- fields_to_add$had_prior_goal
+        payload[["review_q_profics"]] <- fields_to_add$review
+        payload[["review_q2_profics"]] <- fields_to_add$milestone_desc
+        payload[["goal_subcomp_profics"]] <- as.character(match(fields_to_add$subcompetency, profics_vec))
+        payload[["goal_level_profics"]] <- fields_to_add$selected_level
+        payload[["goal_r_profics"]] <- fields_to_add$selected_row
+        payload[["how_profics"]] <- fields_to_add$how_to_achieve
+
+        # Set matrix cell
+        if (startsWith(fields_to_add$subcompetency, "PROF")) {
+          cell <- paste0("prof", substr(fields_to_add$subcompetency, 5, 5), "_r", fields_to_add$selected_row)
+        } else if (startsWith(fields_to_add$subcompetency, "ICS")) {
+          cell <- paste0("ics", substr(fields_to_add$subcompetency, 4, 4), "_r", fields_to_add$selected_row)
+        }
+        payload[[cell]] <- as.character(fields_to_add$selected_level)
+        message("DEBUG: Set matrix cell: ", cell, " = ", payload[[cell]])
+      }
     }
 
-    # For SBP/PBLI
-    if (!is.null(goals_data$sbp_pbli$goal) && !is.null(goals_data$sbp_pbli$subcomp_code)) {
-      comp_code <- tolower(goals_data$sbp_pbli$subcomp_code)
-      row_id <- goals_data$sbp_pbli$goal$row_id
-      level <- goals_data$sbp_pbli$goal$level
-      field_name <- paste0(comp_code, "_r", row_id)
-      submission_data[[field_name]] <- level
+    # SIMPLE DIRECT MATCHING - Map period codes directly to instance numbers
+    # This approach directly maps each period to a specific instance number
+    # We simply use the period code as the instance number (plus a small offset if needed)
+
+    # Simple mapping - just use period code as instance number
+    instance_num <- as.numeric(period_code)
+
+    message("DEBUG: Using instance number ", instance_num, " for period ", period_code)
+
+    # Set the instance number in payload
+    payload$redcap_repeat_instance <- instance_num
+
+    # Convert to data frame and ensure all values are character
+    df <- as.data.frame(payload, stringsAsFactors = FALSE)
+    for (col in names(df)) {
+      df[[col]] <- as.character(df[[col]])
     }
 
-    # For PROF/ICS
-    if (!is.null(goals_data$prof_ics$goal) && !is.null(goals_data$prof_ics$subcomp_code)) {
-      comp_code <- tolower(goals_data$prof_ics$subcomp_code)
-      row_id <- goals_data$prof_ics$goal$row_id
-      level <- goals_data$prof_ics$goal$level
-      field_name <- paste0(comp_code, "_r", row_id)
-      submission_data[[field_name]] <- level
+    message("DEBUG: Final payload to send:")
+    print(df)
+
+    # Submit to REDCap
+    result <- direct_redcap_import(data = df, record_id = record_id, url = redcap_url, token = token)
+
+    # Log the result
+    message("DEBUG: REDCap submission result: ", ifelse(result$success, "SUCCESS", "FAILURE"))
+    if (!result$success) {
+      message("DEBUG: Error message: ", result$outcome_message)
     }
 
-    # Add target dates and status if they exist
-    if (!is.null(goals_data$pcmk$goal$target_date)) {
-      submission_data$pcmk_target_date <- format(goals_data$pcmk$goal$target_date, "%Y-%m-%d")
-      submission_data$pcmk_status <- goals_data$pcmk$goal$status
-    }
+    return(result)
+  }
 
-    if (!is.null(goals_data$sbp_pbli$goal$target_date)) {
-      submission_data$sbppbl_target_date <- format(goals_data$sbp_pbli$goal$target_date, "%Y-%m-%d")
-      submission_data$sbppbl_status <- goals_data$sbp_pbli$goal$status
-    }
+  # When the user clicks “Submit” inside the goalSetting module…
+  observeEvent(goals_mod$submission_ready(), {
+    message("🚀 DEBUG: submission_ready() triggered")
+    req(goals_mod$submission_ready())    # only fire on a TRUE click
 
-    if (!is.null(goals_data$prof_ics$goal$target_date)) {
-      submission_data$profics_target_date <- format(goals_data$prof_ics$goal$target_date, "%Y-%m-%d")
-      submission_data$profics_status <- goals_data$prof_ics$goal$status
-    }
+    # 1) show a "saving…" message
+    notif_id <- showNotification("Saving ILP goals…", type="message", duration=NULL)
 
-    # Log what we're submitting (for debugging)
-    message("Submitting goals data to RedCap: ", jsonlite::toJSON(submission_data))
+    # 2) do the REDCap push
+    tryCatch({
+      message("DEBUG: About to call process_ilp_submission")
 
-    # Submit to RedCap using your existing function
-    res <- submit_to_redcap_with_period_check(
-      record_id = record_id(),
-      instrument = "ilp",  # Your RedCap form name for goals
-      period = period_code,
-      data = submission_data,
-      url =  redcap_url,
-      token = rdm_token
-    )
+      result <- process_ilp_submission(
+        goals_mod   = goals_mod,
+        record_id   = record_id(),
+        period      = selected_period(),
+        redcap_url  = redcap_url,
+        token       = rdm_token
+      )
 
-    if (!isTRUE(res$success)) {
-      showNotification(paste("Goal save failed:", res$outcome_message), type = "error", duration = NULL)
-      return()
-    } else {
-      showNotification("Goals successfully saved!", type = "message", duration = 5)
-      transition("section6_card", "completion_card")
-    }
+      # 3) clear the "saving" message
+      removeNotification(notif_id)
+
+      # 4) reset the module's flag
+      goals_mod$reset_submission()
+
+      # 5) transition based on result
+      if (isTRUE(result$success)) {
+        message("DEBUG: Showing success notification")
+        showNotification("✅ ILP goals submitted!", type="message", duration=5)
+
+        # Force a delay before transition to ensure UI updates
+        shinyjs::delay(500, {
+          message("DEBUG: About to transition to completion_card")
+          transition("section6_card", "completion_card")
+          message("DEBUG: Transitioned to completion card")
+        })
+      } else {
+        message("DEBUG: Showing error notification")
+        showNotification(
+          paste0("❌ Submission failed: ", result$outcome_message %||% "unknown error"),
+          type="error", duration=10
+        )
+      }
+    }, error = function(e) {
+      # Handle any errors
+      message("CRITICAL ERROR in submission process: ", e$message)
+      removeNotification(notif_id)
+      showNotification(
+        paste0("❌ Critical error: ", e$message),
+        type="error", duration=10
+      )
+      # Try to reset module state
+      tryCatch({
+        goals_mod$reset_submission()
+      }, error = function(e2) {
+        message("Could not reset goals module: ", e2$message)
+      })
+    })
   })
-
 }
-
 

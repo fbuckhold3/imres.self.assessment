@@ -250,6 +250,9 @@ goalSettingUI <- function(id) {
   ns <- NS(id)
 
   tagList(
+
+    shinyjs::useShinyjs(),
+
     tags$style(HTML("
     .previous-goal-panel {
       background-color: #f8f9fa;
@@ -1253,19 +1256,24 @@ goalSettingServer <- function(id, rdm_dict_data, subcompetency_maps, competency_
     })
 
     # Button validation observers
+    # Enhanced observers for button state
     observe({
+      # Explicitly isolate all inputs that should trigger this validation
       is_valid <- validate_pcmk_page(input)
-      shinyjs::toggleState(id = session$ns("next_pcmk"), condition = is_valid)
+      cat("PCMK validation result:", is_valid, "\n")  # Add debugging
+      shinyjs::toggleState(id = "next_pcmk", condition = is_valid)
     })
 
     observe({
       is_valid <- validate_sbppbl_page(input)
-      shinyjs::toggleState(id = session$ns("next_sbppbl"), condition = is_valid)
+      cat("SBPPBL validation result:", is_valid, "\n")  # Add debugging
+      shinyjs::toggleState(id = "next_sbppbl", condition = is_valid)
     })
 
     observe({
       is_valid <- validate_profics_page(input)
-      shinyjs::toggleState(id = session$ns("submit_goals"), condition = is_valid)
+      cat("PROFICS validation result:", is_valid, "\n")  # Add debugging
+      shinyjs::toggleState(id = "submit_goals", condition = is_valid)
     })
 
     # When the user clicks “Submit All Goals” inside the module…

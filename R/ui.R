@@ -193,6 +193,57 @@ ui <- fluidPage(
         )
       ),
 
+      # Add this code to your UI definition, right after the period_selection_card div
+      # but before the section1_card div
+
+      # "Entering Residency" intro card (for initial questions)
+      div(
+        id = "intro_card",
+        class = "hidden-card",
+        card(
+          card_header("Introduction for New Residents"),
+          card_body(
+            # Introduction text
+            div(
+              class = "mb-4 p-4 bg-light rounded",
+              h3("Welcome to the Residency Program", class = "mb-3"),
+              p("Before we begin the main assessment, we'd like to gather some information about your educational background.
+           This helps us understand our resident demographics better and tailor our program accordingly.")
+            ),
+
+            # Missouri education questions
+            div(
+              class = "question-group",
+              h4("Educational Background", class = "question-header"),
+
+              div(class = "mb-4",
+                  radioButtons("hs_mo", "Did you attend high school in Missouri?",
+                               choices = c("Yes" = "1", "No" = "0"),
+                               selected = character(0)),
+              ),
+
+              div(class = "mb-4",
+                  radioButtons("college_mo", "Did you attend college in Missouri?",
+                               choices = c("Yes" = "1", "No" = "0"),
+                               selected = character(0)),
+              ),
+
+              div(class = "mb-4",
+                  radioButtons("med_mo", "Did you attend medical school in Missouri?",
+                               choices = c("Yes" = "1", "No" = "0"),
+                               selected = character(0)),
+              )
+            ),
+
+            # Navigation button
+            div(
+              class = "d-flex justify-content-end mt-4",
+              actionButton("intro_next", "Continue", class = "btn-primary")
+            )
+          )
+        )
+      ),
+
       # Plus/Delta Card
       div(
         id = "section1_card", class = "hidden-card",

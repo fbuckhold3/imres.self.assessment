@@ -1,6 +1,12 @@
 server <- function(input, output, session) {
   redcap_url <- "https://redcapsurvey.slu.edu/api/"
 
+  observe({
+    # Debug the period selection
+    req(selected_period())
+    message("DEBUG: selected_period() currently returns '", selected_period(), "'")
+  })
+
   # Show loading notification
   showNotification("Loading data... may take a sec", type = "message", duration = NULL, id = "loading")
 
@@ -302,13 +308,12 @@ server <- function(input, output, session) {
       )
   })
 
-  # Create reactive for schol_data
   scholarship_data <- reactive({
     # Return the data or NULL if not available
     if (exists("schol_data") && !is.null(schol_data)) {
-      schol_data
+      return(schol_data)  # Make sure to return the value
     } else {
-      NULL
+      return(NULL)  # Make sure to return NULL
     }
   })
 
@@ -320,9 +325,9 @@ server <- function(input, output, session) {
       req(resident_info())
       fetch_record_id(resident_info(), resident_data, redcap_url, rdm_token)
     }),
-    schol_data = schol_data
+    schol_data = scholarship_data,  # We're passing the reactive, not the result of calling it
+    token = rdm_token
   )
-
   # Various button observers for navigation
   observeEvent(input[["schol-next_btn"]], {
     transition("section4_card", "section5_card")
@@ -369,6 +374,7 @@ server <- function(input, output, session) {
   })
 
   # Intro next button observer
+  # Intro next button observer
   observeEvent(input$intro_next, {
     # Check that Missouri education questions are answered
     req(input$hs_mo, input$college_mo, input$med_mo)
@@ -378,15 +384,20 @@ server <- function(input, output, session) {
     responses$college_mo <- input$college_mo
     responses$med_mo <- input$med_mo
 
-    # Move to section 2 (since this is entering residency flow)
+    # Move to section 2 without submitting
+    # (Data will be submitted at a later step)
     transition("intro_card", "section2_card")
   })
 
   # Section 1 next button observer
   observeEvent(input$section1_next, {
     req(input$plus, input$delta)
-    responses$s_e_plus  <- input$plus
+
+    # Store the responses
+    responses$s_e_plus <- input$plus
     responses$s_e_delta <- input$delta
+
+    # Continue to next section
     transition("section1_card", "section2_card")
   })
 
@@ -413,32 +424,12 @@ server <- function(input, output, session) {
         checkbox_info$options
       )
 
-      # Get the period code (ensure this is included)
-      period_code <- get_ccc_session(selected_period())
-
-      # IMPORTANT: Explicitly add the period to the processed inputs
-      processed_inputs$s_e_period <- period_code
-
-      # Prepare the payload
-      payload <- prepare_redcap_payload(
+      # Use our reliable submission function with period-based instance
+      res <- reliable_s_eval_submission(
         record_id = record_id(),
-        instrument = "s_eval",
-        instance = NULL,  # Will be determined in submit function
-        period = period_code,
-        input_data = processed_inputs,
-        valid_fields = valid_fields
-      )
-
-      # Make sure s_e_period is explicitly included in the payload
-      payload$s_e_period <- period_code
-
-      # Submit to REDCap with period check
-      res <- submit_to_redcap_with_period_check(
-        record_id = record_id(),
-        instrument = "s_eval",
-        period = period_code,
-        data = payload,
-        url =  redcap_url,
+        period = "Entering Residency",
+        processed_inputs = processed_inputs,
+        redcap_url = redcap_url,
         token = rdm_token
       )
 
@@ -453,7 +444,7 @@ server <- function(input, output, session) {
           responses[[field_name]] <- processed_inputs[[field_name]]
         }
 
-        # CHANGED: Navigate to section5_card instead of completion_card for Entering Residency flow
+        # Continue to next section
         transition("section2_card", "section5_card")
       }
     } else {
@@ -484,8 +475,9 @@ server <- function(input, output, session) {
         checkbox_info$options
       )
 
-      # Get the period code
-      period_code <- get_ccc_session(selected_period())
+      # Add data from previous cards if needed
+      if (!is.null(responses$s_e_plus)) processed_inputs$s_e_plus <- responses$s_e_plus
+      if (!is.null(responses$s_e_delta)) processed_inputs$s_e_delta <- responses$s_e_delta
 
       # Store program feedback data in responses
       store_program_feedback()
@@ -497,23 +489,12 @@ server <- function(input, output, session) {
         }
       }
 
-      # Prepare the payload
-      payload <- prepare_redcap_payload(
+      # Use our reliable submission function
+      res <- reliable_s_eval_submission(
         record_id = record_id(),
-        instrument = "s_eval",
-        instance = NULL,  # Will be determined in submit function
-        period = period_code,
-        input_data = processed_inputs,
-        valid_fields = valid_fields
-      )
-
-      # Submit to REDCap with period check
-      res <- submit_to_redcap_with_period_check(
-        record_id = record_id(),
-        instrument = "s_eval",
-        period = period_code,
-        data = payload,
-        url =  redcap_url,
+        period = selected_period(),
+        processed_inputs = processed_inputs,
+        redcap_url = redcap_url,
         token = rdm_token
       )
 
@@ -651,7 +632,6 @@ server <- function(input, output, session) {
     period = selected_period
   )
 
-  # Handle milestone completion
   observeEvent(input[["miles-done"]], {
     req(miles_mod$scores(), selected_period(), resident_info())
     raw_sel  <- miles_mod$scores()
@@ -703,10 +683,8 @@ server <- function(input, output, session) {
       "Graduating" = "6"
     )
 
-    # Create a direct submission dataframe
-    submission_data <- data.frame(
-      record_id = record_id(),
-      redcap_repeat_instrument = "milestone_selfevaluation_c33c",
+    # Build fields list with all milestone data
+    fields <- list(
       prog_mile_date_self = as.character(Sys.Date()),
       prog_mile_period_self = period_mapping[selected_period()]
     )
@@ -715,41 +693,74 @@ server <- function(input, output, session) {
     for(key in names(raw_sel)) {
       field_name <- mile_key2field[[key]]
       if (!is.null(field_name)) {
-        submission_data[[field_name]] <- as.numeric(raw_sel[[key]])
+        fields[[field_name]] <- as.character(raw_sel[[key]])  # Convert to character
 
         # Add description if it exists and is enabled
         if (key %in% desc_enabled_fields &&
             !is.null(raw_desc[[key]]) &&
             nzchar(trimws(raw_desc[[key]]))) {
           desc_field <- paste0(field_name, "_desc")
-          submission_data[[desc_field]] <- as.character(raw_desc[[key]])
+          fields[[desc_field]] <- as.character(raw_desc[[key]])
         }
       }
     }
 
-    # Generate new instance or get existing one
-    instance_number <- generate_new_instance(
-      record_id = record_id(),
-      instrument_name = "milestone_selfevaluation_c33c",
-      coach_data = miles,
-      redcap_uri =  redcap_url,
-      token = rdm_token
+    # Use period_mapping as the instance number
+    instance_number <- as.character(period_mapping[selected_period()])
+    message("Using period-based instance number: ", instance_number, " for milestone_selfevaluation_c33c")
+
+    # Build data manually in the exact format REDCap expects
+    data_str <- sprintf(
+      '[{"record_id":"%s","redcap_repeat_instrument":"milestone_selfevaluation_c33c","redcap_repeat_instance":"%s"',
+      record_id(), instance_number
     )
 
-    # Set the instance number
-    submission_data$redcap_repeat_instance <- as.numeric(instance_number)
+    # Add all fields
+    for (field in names(fields)) {
+      if (!is.null(fields[[field]]) && !is.na(fields[[field]])) {
+        # Escape quotes in values if any
+        value <- gsub('"', '\\"', as.character(fields[[field]]))
+        data_str <- paste0(data_str, sprintf(',"%s":"%s"', field, value))
+      }
+    }
 
-    # Ensure rownames don't get included
-    rownames(submission_data) <- NULL
+    # Add complete status
+    data_str <- paste0(data_str, ',"milestone_selfevaluation_c33c_complete":"0"')
 
-    # Submit the data
-    submission_response <- direct_redcap_import(
-      data = submission_data,
-      record_id = record_id(),
-      url =  redcap_url,
-      token = rdm_token
+    # Close the object and array
+    data_str <- paste0(data_str, "}]")
+
+    message("Submitting milestone data (first 100 chars): ", substr(data_str, 1, 100))
+
+    # Submit to REDCap using the same pattern that worked for s_eval
+    response <- httr::POST(
+      url = redcap_url,
+      body = list(
+        token = rdm_token,
+        content = "record",
+        action = "import",
+        format = "json",
+        type = "flat",
+        overwriteBehavior = "normal",
+        forceAutoNumber = "false",
+        data = data_str,
+        returnContent = "count",
+        returnFormat = "json"
+      ),
+      encode = "form"
     )
 
+    # Process response
+    status_code <- httr::status_code(response)
+    response_content <- httr::content(response, "text", encoding = "UTF-8")
+
+    message("REDCap API response status: ", status_code)
+    message("REDCap API response: ", response_content)
+
+    # Check if submission was successful
+    submission_success <- status_code == 200
+
+    # Process current milestone data (this part remains unchanged)
     rv$current_milestone_data <- process_current_milestone(
       milestone_scores = miles_mod,
       resident_name = resident_info(),
@@ -775,8 +786,8 @@ server <- function(input, output, session) {
       }
     }
 
-    if (!submission_response$success) {
-      showNotification(paste("Save failed:", submission_response$outcome_message), type = "error", duration = NULL)
+    if (!submission_success) {
+      showNotification(paste("Save failed:", response_content), type = "error", duration = NULL)
       return()
     } else {
       showNotification("Milestone self-evaluation saved!", type = "message", duration = 5)
@@ -824,7 +835,6 @@ server <- function(input, output, session) {
     }
   })
 
-  # Simplified ILP submission function
   process_ilp_submission <- function(goals_mod, record_id, period, redcap_url, token) {
     # Get responses from goals module
     resp <- goals_mod$get_responses()
@@ -833,15 +843,16 @@ server <- function(input, output, session) {
     # Get period code
     period_code <- get_ccc_session(period)
 
-    # Create basic payload
-    payload <- list(
-      record_id = record_id,
-      ilp_date = format(Sys.Date(), "%Y-%m-%d"),
-      year_resident = period_code,
-      redcap_repeat_instrument = "ilp"
-    )
+    # Use period code as instance number
+    instance_num <- as.character(period_code)
 
-    message("DEBUG: Building payload for period code: ", period_code)
+    message("DEBUG: Using instance number ", instance_num, " for period ", period_code)
+
+    # Create fields collection - only basic fields initially
+    fields <- list(
+      ilp_date = format(Sys.Date(), "%Y-%m-%d"),
+      year_resident = as.character(period_code)
+    )
 
     # Prepare mapping vectors
     pcmk_vec    <- c(names(subcompetency_maps$PC),    names(subcompetency_maps$MK))
@@ -858,109 +869,131 @@ server <- function(input, output, session) {
 
       message("DEBUG: Processing group ", grp)
 
-      # Add fields to payload
-      fields_to_add <- list(
-        # Basic fields
-        had_prior_goal = g$had_prior_goal,
-        review = g$review,
-        milestone_desc = g$milestone_description,
-        selected_level = g$selected_level,
-        selected_row = g$selected_row,
-        how_to_achieve = g$how_to_achieve,
-        subcompetency = g$subcompetency
-      )
-
-      # Map fields to REDCap field names based on group
+      # Only add metadata fields (not the actual matrix cells yet)
       if (grp == "pcmk") {
-        payload[["prior_goal_pcmk"]] <- fields_to_add$had_prior_goal
-        payload[["review_q_pcmk"]] <- fields_to_add$review
-        payload[["review_q2_pcmk"]] <- fields_to_add$milestone_desc
-        payload[["goal_pcmk"]] <- as.character(match(fields_to_add$subcompetency, pcmk_vec))
-        payload[["goal_level_pcmk"]] <- fields_to_add$selected_level
-        payload[["goal_level_r_pcmk"]] <- fields_to_add$selected_row
-        payload[["how_pcmk"]] <- fields_to_add$how_to_achieve
+        fields[["prior_goal_pcmk"]] <- g$had_prior_goal
+        fields[["review_q_pcmk"]] <- g$review
+        fields[["goal_pcmk"]] <- as.character(match(g$subcompetency, pcmk_vec))
+        fields[["goal_level_pcmk"]] <- g$selected_level
+        fields[["goal_level_r_pcmk"]] <- g$selected_row
+        fields[["how_pcmk"]] <- g$how_to_achieve
 
-        # Set matrix cell
-        if (startsWith(fields_to_add$subcompetency, "PC")) {
-          cell <- paste0("pc", substr(fields_to_add$subcompetency, 3, 3), "_r", fields_to_add$selected_row)
-        } else if (startsWith(fields_to_add$subcompetency, "MK")) {
-          cell <- paste0("mk", substr(fields_to_add$subcompetency, 3, 3), "_r", fields_to_add$selected_row)
-        }
-        payload[[cell]] <- as.character(fields_to_add$selected_level)
-        message("DEBUG: Set matrix cell: ", cell, " = ", payload[[cell]])
+        # IMPORTANT: Do NOT set review_q2_pcmk here
       }
       else if (grp == "sbppbl") {
-        payload[["prior_goal_sbppbl"]] <- fields_to_add$had_prior_goal
-        payload[["review_q_sbppbl"]] <- fields_to_add$review
-        payload[["review_q2_sbppbl"]] <- fields_to_add$milestone_desc
-        payload[["goal_sbppbl"]] <- as.character(match(fields_to_add$subcompetency, sbppbl_vec))
-        payload[["goal_level_sbppbl"]] <- fields_to_add$selected_level
-        payload[["goal_r_sbppbl"]] <- fields_to_add$selected_row
-        payload[["how_sbppbl"]] <- fields_to_add$how_to_achieve
+        fields[["prior_goal_sbppbl"]] <- g$had_prior_goal
+        fields[["review_q_sbppbl"]] <- g$review
+        fields[["goal_sbppbl"]] <- as.character(match(g$subcompetency, sbppbl_vec))
+        fields[["goal_level_sbppbl"]] <- g$selected_level
+        fields[["goal_r_sbppbl"]] <- g$selected_row
+        fields[["how_sbppbl"]] <- g$how_to_achieve
 
-        # Set matrix cell
-        if (startsWith(fields_to_add$subcompetency, "SBP")) {
-          cell <- paste0("sbp", substr(fields_to_add$subcompetency, 4, 4), "_r", fields_to_add$selected_row)
-        } else if (startsWith(fields_to_add$subcompetency, "PBLI")) {
-          cell <- paste0("pbl", substr(fields_to_add$subcompetency, 5, 5), "_r", fields_to_add$selected_row)
-        }
-        payload[[cell]] <- as.character(fields_to_add$selected_level)
-        message("DEBUG: Set matrix cell: ", cell, " = ", payload[[cell]])
+        # IMPORTANT: Do NOT set review_q2_sbppbl here
       }
       else if (grp == "profics") {
-        payload[["prior_goal_profics"]] <- fields_to_add$had_prior_goal
-        payload[["review_q_profics"]] <- fields_to_add$review
-        payload[["review_q2_profics"]] <- fields_to_add$milestone_desc
-        payload[["goal_subcomp_profics"]] <- as.character(match(fields_to_add$subcompetency, profics_vec))
-        payload[["goal_level_profics"]] <- fields_to_add$selected_level
-        payload[["goal_r_profics"]] <- fields_to_add$selected_row
-        payload[["how_profics"]] <- fields_to_add$how_to_achieve
+        fields[["prior_goal_profics"]] <- g$had_prior_goal
+        fields[["review_q_profics"]] <- g$review
+        fields[["goal_subcomp_profics"]] <- as.character(match(g$subcompetency, profics_vec))
+        fields[["goal_level_profics"]] <- g$selected_level
+        fields[["goal_r_profics"]] <- g$selected_row
+        fields[["how_profics"]] <- g$how_to_achieve
 
-        # Set matrix cell
-        if (startsWith(fields_to_add$subcompetency, "PROF")) {
-          cell <- paste0("prof", substr(fields_to_add$subcompetency, 5, 5), "_r", fields_to_add$selected_row)
-        } else if (startsWith(fields_to_add$subcompetency, "ICS")) {
-          cell <- paste0("ics", substr(fields_to_add$subcompetency, 4, 4), "_r", fields_to_add$selected_row)
+        # IMPORTANT: Do NOT set review_q2_profics here
+      }
+
+      # Now set just the specific matrix cell based on competency and row
+      if (grp == "pcmk") {
+        if (startsWith(g$subcompetency, "PC")) {
+          cell <- paste0("pc", substr(g$subcompetency, 3, 3), "_r", g$selected_row)
+        } else if (startsWith(g$subcompetency, "MK")) {
+          cell <- paste0("mk", substr(g$subcompetency, 3, 3), "_r", g$selected_row)
         }
-        payload[[cell]] <- as.character(fields_to_add$selected_level)
-        message("DEBUG: Set matrix cell: ", cell, " = ", payload[[cell]])
+        fields[[cell]] <- as.character(g$selected_level)
+        message("DEBUG: Set matrix cell: ", cell, " = ", fields[[cell]])
+      }
+      else if (grp == "sbppbl") {
+        if (startsWith(g$subcompetency, "SBP")) {
+          cell <- paste0("sbp", substr(g$subcompetency, 4, 4), "_r", g$selected_row)
+        } else if (startsWith(g$subcompetency, "PBLI")) {
+          cell <- paste0("pbl", substr(g$subcompetency, 5, 5), "_r", g$selected_row)
+        }
+        fields[[cell]] <- as.character(g$selected_level)
+        message("DEBUG: Set matrix cell: ", cell, " = ", fields[[cell]])
+      }
+      else if (grp == "profics") {
+        if (startsWith(g$subcompetency, "PROF")) {
+          cell <- paste0("prof", substr(g$subcompetency, 5, 5), "_r", g$selected_row)
+        } else if (startsWith(g$subcompetency, "ICS")) {
+          cell <- paste0("ics", substr(g$subcompetency, 4, 4), "_r", g$selected_row)
+        }
+        fields[[cell]] <- as.character(g$selected_level)
+        message("DEBUG: Set matrix cell: ", cell, " = ", fields[[cell]])
       }
     }
 
-    # SIMPLE DIRECT MATCHING - Map period codes directly to instance numbers
-    # This approach directly maps each period to a specific instance number
-    # We simply use the period code as the instance number (plus a small offset if needed)
+    # Build data manually in the exact format REDCap expects
+    data_str <- sprintf(
+      '[{"record_id":"%s","redcap_repeat_instrument":"ilp","redcap_repeat_instance":"%s"',
+      as.character(record_id), instance_num
+    )
 
-    # Simple mapping - just use period code as instance number
-    instance_num <- as.numeric(period_code)
-
-    message("DEBUG: Using instance number ", instance_num, " for period ", period_code)
-
-    # Set the instance number in payload
-    payload$redcap_repeat_instance <- instance_num
-
-    # Convert to data frame and ensure all values are character
-    df <- as.data.frame(payload, stringsAsFactors = FALSE)
-    for (col in names(df)) {
-      df[[col]] <- as.character(df[[col]])
+    # Add all fields
+    for (field in names(fields)) {
+      if (!is.null(fields[[field]]) && !is.na(fields[[field]])) {
+        # Escape quotes in values if any
+        value <- gsub('"', '\\"', as.character(fields[[field]]))
+        data_str <- paste0(data_str, sprintf(',"%s":"%s"', field, value))
+      }
     }
 
-    message("DEBUG: Final payload to send:")
-    print(df)
+    # Add complete status
+    data_str <- paste0(data_str, ',"ilp_complete":"0"')
 
-    # Submit to REDCap
-    result <- direct_redcap_import(data = df, record_id = record_id, url = redcap_url, token = token)
+    # Close the object and array
+    data_str <- paste0(data_str, "}]")
 
-    # Log the result
-    message("DEBUG: REDCap submission result: ", ifelse(result$success, "SUCCESS", "FAILURE"))
-    if (!result$success) {
-      message("DEBUG: Error message: ", result$outcome_message)
+    message("DEBUG: Submitting ILP JSON data (first 100 chars): ", substr(data_str, 1, 100))
+
+    # Submit to REDCap using the direct approach that worked for s_eval
+    response <- httr::POST(
+      url = redcap_url,
+      body = list(
+        token = token,
+        content = "record",
+        action = "import",
+        format = "json",
+        type = "flat",
+        overwriteBehavior = "normal",
+        forceAutoNumber = "false",
+        data = data_str,
+        returnContent = "count",
+        returnFormat = "json"
+      ),
+      encode = "form"
+    )
+
+    # Process response
+    status_code <- httr::status_code(response)
+    response_content <- httr::content(response, "text", encoding = "UTF-8")
+
+    message("REDCap API response status: ", status_code)
+    message("REDCap API response: ", response_content)
+
+    # Return result
+    if (status_code == 200) {
+      return(list(
+        success = TRUE,
+        outcome_message = paste("Successfully submitted ILP data for record", record_id)
+      ))
+    } else {
+      return(list(
+        success = FALSE,
+        outcome_message = paste("Failed to submit ILP data for record", record_id, ":", response_content)
+      ))
     }
-
-    return(result)
   }
 
-  # When the user clicks “Submit” inside the goalSetting module…
+  # The observer handling the submission button click doesn't need to change
   observeEvent(goals_mod$submission_ready(), {
     message("🚀 DEBUG: submission_ready() triggered")
     req(goals_mod$submission_ready())    # only fire on a TRUE click

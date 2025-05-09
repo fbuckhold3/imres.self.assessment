@@ -30,7 +30,6 @@ parse_choices <- function(raw) {
   result
 }
 
-
 # For yes/no fields, provide standard choices
 safe_radio_yesno <- function(inputId, label, selected = NULL) {
   safe_radio_buttons(
@@ -95,10 +94,7 @@ safe_conditional_panel <- function(condition, content) {
   })
 }
 
-
-
 # ─── UI Renderers for Entering Residency ───────────────────────────
-
 
 # Faculty block - modify to use yes/no handling
 render_faculty_block <- function(ent) {
@@ -117,7 +113,6 @@ render_faculty_block <- function(ent) {
     )
   )
 }
-
 
 # Goals block
 render_goals_block <- function(ent) {
@@ -1116,8 +1111,6 @@ render_card3_ui <- function(rdm_dict) {
   )
 }
 
-
-
 #' Handle the submission of s_eval fields
 #'
 #' @param fields_to_collect Character vector of field names to submit
@@ -1180,8 +1173,6 @@ handle_s_eval_submission <- function(fields_to_collect, record_id) {
   }
   TRUE
 }
-
-
 
 # Process form inputs for REDCap submission
 process_form_inputs <- function(inputs, valid_fields, checkbox_fields = NULL, checkbox_options = NULL) {
@@ -1339,193 +1330,87 @@ prepare_redcap_payload <- function(record_id, instrument, instance, period, inpu
   return(as.data.frame(payload, stringsAsFactors = FALSE))
 }
 
-submit_to_redcap_with_period_check <- function(record_id, instrument, period_text, data, url, token) {
-  # Create correct mapping between text periods and their numeric equivalents
-  period_mapping <- c(
-    "Entering Residency" = 1,  # This was missing in your original mapping
-    "Mid Intern" = 2,          # These values were all off by 1
-    "End Intern" = 3,
-    "Mid PGY2" = 4,
-    "End PGY2" = 5,
-    "Mid PGY3" = 6,
-    "Graduating" = 7,
-    "Interim Review" = 8       # Added this if needed
-  )
+submit_to_redcap_with_period_check <- function(record_id, instrument, period, data, url, token) {
+  message("DEBUG: submit_to_redcap_with_period_check called with period = '", period, "' of class ", class(period))
 
-  # Convert the text period to its numeric equivalent
-  # Fix: Use exact matching to prevent vector results
-  period_numeric <- as.numeric(period_mapping[period_text])
+  # Direct mapping for period text to numeric
+  if (is.character(period)) {
+    period_mapping <- c(
+      "Entering Residency" = 7,
+      "Mid Intern" = 1,
+      "End Intern" = 2,
+      "Mid PGY2" = 3,
+      "End PGY2" = 4,
+      "Mid PGY3" = 5,
+      "Graduating" = 6
+    )
 
-  # If period_text isn't in our mapping, try to convert it directly
-  if (length(period_numeric) != 1 || is.na(period_numeric)) {
-    if (!is.na(suppressWarnings(as.numeric(period_text)))) {
-      period_numeric <- as.numeric(period_text)
+    if (period %in% names(period_mapping)) {
+      period_numeric <- period_mapping[period]
+      message("DEBUG: Found exact match for '", period, "' -> ", period_numeric)
     } else {
-      message("Warning: Unknown period text '", period_text, "'. Using as-is.")
-      period_numeric <- period_text
+      if (grepl("Graduat", period)) {
+        period_numeric <- 6
+      } else if (grepl("Enter", period)) {
+        period_numeric <- 7
+      } else {
+        period_numeric <- 1
+      }
     }
-  }
-
-  message("Checking for existing instances with period: ", period_text,
-          " (numeric value: ", period_numeric, ") for record_id: ", record_id)
-
-  # Make sure the period is set correctly in the data
-  data$s_e_period <- period_numeric
-
-  # Get all existing data for this record/instrument
-  response <- httr::POST(
-    url = url,
-    body = list(
-      token = token,
-      content = "record",
-      action = "export",
-      format = "json",
-      type = "flat",
-      records = record_id,
-      forms = instrument,
-      rawOrLabel = "raw",
-      rawOrLabelHeaders = "raw",
-      exportCheckboxLabel = "false",
-      exportSurveyFields = "false",
-      exportDataAccessGroups = "false",
-      returnFormat = "json"
-    ),
-    encode = "form"
-  )
-
-  # Initialize variables
-  existing_data <- NULL
-  existing_instances <- data.frame(instance = integer(0), period = integer(0))
-  matching_instance <- NULL
-
-  # Process response
-  if (httr::status_code(response) == 200) {
-    response_text <- httr::content(response, "text", encoding = "UTF-8")
-
-    if (response_text != "" && response_text != "[]") {
-      tryCatch({
-        existing_data <- jsonlite::fromJSON(response_text)
-        message("Retrieved existing data from REDCap:")
-        print(existing_data)
-
-        # Build a list of existing instances and their periods
-        if (is.data.frame(existing_data) && nrow(existing_data) > 0) {
-          for (i in 1:nrow(existing_data)) {
-            instance_num <- i  # Default to row number
-
-            # If redcap_repeat_instance exists, use that
-            if ("redcap_repeat_instance" %in% names(existing_data)) {
-              instance_num <- as.numeric(existing_data$redcap_repeat_instance[i])
-            }
-
-            # If s_e_period exists, record it
-            if ("s_e_period" %in% names(existing_data)) {
-              # Fix: Ensure we're dealing with a single value for each row
-              period_num <- as.numeric(existing_data$s_e_period[i])
-
-              # Add to our tracking dataframe
-              existing_instances <- rbind(existing_instances,
-                                          data.frame(instance = instance_num,
-                                                     period = period_num))
-            }
-          }
-        }
-
-        # Look for a match on period
-        if (nrow(existing_instances) > 0) {
-          message("Found existing instances:")
-          print(existing_instances)
-
-          # Find the matching period
-          for (i in 1:nrow(existing_instances)) {
-            # Fix: Ensure we're comparing single values
-            current_period <- existing_instances$period[i]
-            if (!is.na(current_period) &&
-                !is.na(period_numeric) &&
-                length(current_period) == 1 &&
-                length(period_numeric) == 1 &&
-                current_period == period_numeric) {
-              matching_instance <- existing_instances$instance[i]
-              message("Found matching period ", period_numeric, " in instance ", matching_instance)
-              break
-            }
-          }
-        }
-      }, error = function(e) {
-        message("Error processing REDCap data: ", e$message)
-      })
-    } else {
-      message("No data returned from REDCap API")
-    }
+  } else if (is.numeric(period)) {
+    period_numeric <- period
   } else {
-    message("Error fetching data: ", httr::status_code(response), " - ",
-            httr::content(response, "text"))
+    period_numeric <- 1
   }
 
-  # If we found a matching instance, update it
-  if (!is.null(matching_instance)) {
-    message("Found matching instance with period ", period_numeric, ": ", matching_instance, ". Updating this instance.")
+  # Create a new data frame with record_id FIRST
+  new_data <- data.frame(
+    record_id = as.character(record_id),
+    stringsAsFactors = FALSE
+  )
 
-    # Set the instance number in the data
-    data$redcap_repeat_instance <- matching_instance
-    data$redcap_repeat_instrument <- instrument
+  # Add the period fields
+  new_data$redcap_repeat_instrument <- instrument
+  new_data$s_e_period <- as.character(period_numeric)
+  new_data$s_e_date <- format(Sys.Date(), "%Y-%m-%d")
 
-    # Submit the data to REDCap using direct API call
-    return(direct_redcap_import(data, record_id, url, token))
-  }
-
-  # If we didn't find a matching instance, create a new one
-  message("No matching instance found for period ", period_numeric, ". Creating a new instance.")
-
-  # Find the next available instance number
-  next_instance <- 1
-  if (nrow(existing_instances) > 0) {
-    next_instance <- max(existing_instances$instance) + 1
-  }
-
-  message("Using instance number: ", next_instance, " for new record")
-
-  # Set the instance number in the data
-  data$redcap_repeat_instance <- next_instance
-  data$redcap_repeat_instrument <- instrument
-
-  # Submit the new instance to REDCap
-  return(direct_redcap_import(data, record_id, url, token))
-}
-
-# Function to directly import data to REDCap without relying on REDCapR
-direct_redcap_import <- function(data, record_id, url, token) {
-  # Ensure data has the correct structure for repeating instruments
-  if (!"redcap_repeat_instrument" %in% names(data)) {
-    message("Adding redcap_repeat_instrument to data")
-    data$redcap_repeat_instrument <- "s_eval"  # Make sure this matches your form name exactly
-  }
-
-  if (!"redcap_repeat_instance" %in% names(data)) {
-    message("Adding redcap_repeat_instance to data")
-    data$redcap_repeat_instance <- 1  # Default to instance 1 if not specified
-  }
-
-  # Ensure record_id is in the data
-  if (!"record_id" %in% names(data)) {
-    message("Adding record_id to data")
-    data$record_id <- record_id
-  }
-
-  # Ensure all data is character type for REDCap
-  data <- as.data.frame(data, stringsAsFactors = FALSE)
+  # Now add all the fields from the original data
+  # Exclude any fields we've already set to avoid duplicates
+  fields_to_exclude <- c("record_id", "redcap_repeat_instrument", "s_e_period", "s_e_date")
   for (col in names(data)) {
-    data[[col]] <- as.character(data[[col]])
+    if (!(col %in% fields_to_exclude)) {
+      new_data[[col]] <- data[[col]]
+    }
   }
 
-  # Convert data frame to JSON
-  data_json <- jsonlite::toJSON(data, auto_unbox = TRUE)
+  # Set a specific instance number - use period_numeric or a timestamp
+  # This helps ensure uniqueness and proper organization
+  instance_number <- as.numeric(period_numeric) # or use a timestamp approach
+  new_data$redcap_repeat_instance <- as.character(instance_number)
 
-  # Log the data being sent to REDCap for debugging
-  message("Sending data to REDCap:")
-  print(data)
+  # Add form complete status if not present
+  form_complete_field <- paste0(instrument, "_complete")
+  if (!form_complete_field %in% names(new_data)) {
+    new_data[[form_complete_field]] <- "0"
+  }
 
-  # Submit to REDCap API
+  # Ensure all fields are character type for REDCap
+  for (col in names(new_data)) {
+    if (!is.character(new_data[[col]])) {
+      new_data[[col]] <- as.character(new_data[[col]])
+    }
+  }
+
+  # Prepare data for REDCap - must be a LIST of data frames
+  submission_list <- list(new_data)
+
+  # Convert to JSON with auto_unbox = FALSE to ensure it's formatted correctly
+  json_data <- jsonlite::toJSON(submission_list, auto_unbox = FALSE)
+
+  # Log the JSON data for debugging
+  message("DEBUG: JSON data (first 200 chars): ", substr(json_data, 1, 200))
+
+  # Submit to REDCap
   response <- httr::POST(
     url = url,
     body = list(
@@ -1536,26 +1421,28 @@ direct_redcap_import <- function(data, record_id, url, token) {
       type = "flat",
       overwriteBehavior = "normal",
       forceAutoNumber = "false",
-      data = data_json,
+      data = json_data,
       returnContent = "count",
       returnFormat = "json"
     ),
     encode = "form"
   )
 
-  # Check response
-  if (httr::status_code(response) == 200) {
-    response_content <- httr::content(response, "text", encoding = "UTF-8")
-    message("REDCap API response: ", response_content)
+  # Process response
+  status_code <- httr::status_code(response)
+  message("REDCap API response status: ", status_code)
 
+  response_content <- httr::content(response, "text", encoding = "UTF-8")
+  message("REDCap API response: ", response_content)
+
+  if (status_code == 200) {
     return(list(
       success = TRUE,
       outcome_message = paste("Successfully submitted data for record", record_id)
     ))
   } else {
-    error_message <- httr::content(response, "text", encoding = "UTF-8")
+    error_message <- response_content
     message("Error submitting to REDCap: ", error_message)
-
     return(list(
       success = FALSE,
       outcome_message = paste("Failed to submit data for record", record_id, ":", error_message)
@@ -1563,9 +1450,83 @@ direct_redcap_import <- function(data, record_id, url, token) {
   }
 }
 
+direct_redcap_import <- function(data, record_id, url, token) {
+  # Ensure record_id is character
+  record_id <- as.character(record_id)
 
+  # Ensure data is a data frame
+  if (!is.data.frame(data)) {
+    data <- as.data.frame(data, stringsAsFactors = FALSE)
+  }
 
+  # Ensure record_id is in the data frame
+  if (!"record_id" %in% names(data)) {
+    data$record_id <- record_id
+  }
 
+  # Always use character types for all fields
+  for (col in names(data)) {
+    data[[col]] <- as.character(data[[col]])
+  }
+
+  # Move record_id to first position to ensure it's prominent in JSON
+  data <- data[, c("record_id", setdiff(names(data), "record_id"))]
+
+  # Ensure required repeating fields
+  if (!"redcap_repeat_instrument" %in% names(data)) {
+    stop("'redcap_repeat_instrument' must be in the data")
+  }
+
+  if (!"redcap_repeat_instance" %in% names(data)) {
+    # Generate a timestamp-based instance
+    timestamp <- as.numeric(format(Sys.time(), "%Y%m%d%H%M%S"))
+    data$redcap_repeat_instance <- as.character(timestamp %% 10000) # Last 4 digits
+  }
+
+  # Convert to JSON - CRITICAL to wrap in a list
+  json_data <- jsonlite::toJSON(list(data), auto_unbox = FALSE)
+
+  # Log what we're sending
+  message("Submitting to REDCap with record_id: ", record_id)
+  message("JSON data (first 200 chars): ", substr(json_data, 1, 200))
+
+  # Make REDCap API call
+  response <- httr::POST(
+    url = url,
+    body = list(
+      token = token,
+      content = "record",
+      action = "import",
+      format = "json",
+      type = "flat",
+      overwriteBehavior = "normal",
+      forceAutoNumber = "false",
+      data = json_data,
+      returnContent = "count",
+      returnFormat = "json"
+    ),
+    encode = "form"
+  )
+
+  # Process response
+  status_code <- httr::status_code(response)
+  response_content <- httr::content(response, "text", encoding = "UTF-8")
+
+  message("REDCap API response status: ", status_code)
+  message("REDCap API response: ", response_content)
+
+  if (status_code == 200) {
+    return(list(
+      success = TRUE,
+      outcome_message = paste("Successfully submitted data for record", record_id)
+    ))
+  } else {
+    return(list(
+      success = FALSE,
+      outcome_message = paste("Failed to submit data for record", record_id, ":", response_content)
+    ))
+  }
+}
 
 #' Render the “Next Steps” block for the Graduating section
 #'
@@ -1657,9 +1618,6 @@ render_contact_block <- function(rdm_dict) {
   )
 }
 
-
-
-
 # Helper function to convert Yes/No to numeric values
 convert_yes_no <- function(value) {
   if (is.null(value) || length(value) == 0) {
@@ -1677,102 +1635,213 @@ convert_yes_no <- function(value) {
 }
 
 # Modified handle_scholarship_submission to convert Yes/No fields and always create new instances
-handle_scholarship_submission <- function(record_id, values) {
+handle_scholarship_submission <- function(record_id, values, token = NULL) {
+  # Always use a hardcoded string URL to avoid closure issues
+  redcap_url_string <- "https://redcapsurvey.slu.edu/api/"
+
+  # Check if token is provided
+  if (is.null(token)) {
+    # Try to get token from parent environment
+    if (exists("rdm_token", envir = parent.frame())) {
+      token <- get("rdm_token", envir = parent.frame())
+    } else {
+      # Look for it in the global environment
+      if (exists("rdm_token", envir = .GlobalEnv)) {
+        token <- get("rdm_token", envir = .GlobalEnv)
+      } else {
+        stop("REDCap token not found. Please provide the token as a parameter.")
+      }
+    }
+  }
+
+  # Extract record_id if it's reactive
+  actual_record_id <- if (is.reactive(record_id)) record_id() else record_id
+  actual_record_id <- as.character(actual_record_id)
+
+  message("Processing scholarship submission for record ID: ", actual_record_id,
+          " with values: ", paste(names(values), collapse=", "))
+
   # Convert any Yes/No values to numeric
   yes_no_fields <- c("schol_pres", "schol_pub", "schol_ps", "schol_rca")
   for (field in yes_no_fields) {
     if (field %in% names(values)) {
-      values[[field]] <- convert_yes_no(values[[field]])
+      values[[field]] <- if (values[[field]] == "Yes") "1" else if (values[[field]] == "No") "0" else values[[field]]
     }
   }
 
-  # Check for and fix the field name issue
-  if ("type" %in% names(values)) {
-    # Rename "type" to "schol_type" if it exists
-    type_value <- values[["type"]]
-    values[["type"]] <- NULL  # Remove the incorrect field
-
-    # Only add schol_type if it doesn't already exist
-    if (!("schol_type" %in% names(values))) {
-      values[["schol_type"]] <- type_value
-    }
+  # Fix the field name issue
+  if ("type" %in% names(values) && !("schol_type" %in% names(values))) {
+    values[["schol_type"]] <- values[["type"]]
+    values[["type"]] <- NULL
   }
 
-  # 1) figure out next instance - ALWAYS CREATE A NEW INSTANCE FOR SCHOLARSHIP
-  next_inst <- tryCatch({
-    generate_instance_2(
-      record_id = record_id,
-      instrument_name = "scholarship",
-      coach_data = NULL,
-      redcap_uri = url,
-      token = rdm_token
+  # Get the next instance number - SIMPLIFIED
+  next_inst <- 1
+
+  # Try direct REDCap API call to get existing instances
+  tryCatch({
+    body_params <- list(
+      token = token,
+      content = "record",
+      action = "export",
+      format = "json",
+      type = "flat",
+      records = actual_record_id,
+      forms = "scholarship"
     )
+
+    response <- httr::POST(
+      url = redcap_url_string,
+      body = body_params,
+      encode = "form"
+    )
+
+    if (httr::status_code(response) == 200) {
+      response_text <- httr::content(response, "text", encoding = "UTF-8")
+      message("API Export Response Text (first 100 chars): ",
+              substring(response_text, 1, 100))
+
+      if (response_text != "" && response_text != "[]") {
+        parsed_data <- jsonlite::fromJSON(response_text)
+        if (is.data.frame(parsed_data) && nrow(parsed_data) > 0) {
+          # Extract just records with redcap_repeat_instrument = "scholarship"
+          scholarship_records <- parsed_data[
+            parsed_data$redcap_repeat_instrument == "scholarship",
+          ]
+
+          if (nrow(scholarship_records) > 0 &&
+              "redcap_repeat_instance" %in% colnames(scholarship_records)) {
+            # Find max instance and increment
+            instances <- as.numeric(scholarship_records$redcap_repeat_instance)
+            instances <- instances[!is.na(instances)]
+            if (length(instances) > 0) {
+              next_inst <- max(instances) + 1
+            }
+          }
+        }
+      }
+    } else {
+      message("API error during export: ", httr::status_code(response),
+              " - ", httr::content(response, "text"))
+    }
   }, error = function(e) {
-    message("Error generating instance: ", e$message)
-    return(1) # Default to 1 if there's an error
+    message("Error during instance calculation: ", e$message)
   })
 
-  # 2) build a one‐row data.frame
-  df <- tibble::tibble(
-    record_id = record_id,
+  message("Using instance number: ", next_inst)
+
+  # Build a simple data structure with minimal fields
+  submission_data <- list(
+    record_id = actual_record_id,
     redcap_repeat_instrument = "scholarship",
-    redcap_repeat_instance = next_inst
+    redcap_repeat_instance = as.character(next_inst)
   )
 
-  # Ensure all values are vectors before binding
-  values_list <- list()
-  for (name in names(values)) {
-    if (is.null(values[[name]])) {
-      # Skip NULL values
-      next
-    } else if (!is.vector(values[[name]])) {
-      # Convert non-vectors to character
-      values_list[[name]] <- as.character(values[[name]])
-    } else {
-      values_list[[name]] <- values[[name]]
+  # Add only the fields we need
+  for (field in names(values)) {
+    if (!is.null(values[[field]]) &&
+        !is.na(values[[field]]) &&
+        values[[field]] != "") {
+      submission_data[[field]] <- as.character(values[[field]])
     }
   }
 
-  # Convert to a tibble only if we have valid values
-  if (length(values_list) > 0) {
-    values_tibble <- tibble::as_tibble(values_list)
-    df2 <- dplyr::bind_cols(df, values_tibble)
-  } else {
-    df2 <- df
-  }
+  # Convert to JSON for REDCap API - as an array of one object
+  data_json <- jsonlite::toJSON(list(submission_data), auto_unbox = TRUE)
 
-  # Log what we're submitting for debugging
-  message("Submitting scholarship data with instance ", next_inst)
-  print(df2)
+  message("Sending data to REDCap: ", data_json)
 
-  # 3) submit directly to REDCap without using submit_to_redcap_with_period_check
-  result <- tryCatch({
-    redcap_write(
-      ds = df2,
-      redcap_uri = url,
-      token = rdm_token
-    )
-  }, error = function(e) {
-    message("Error writing to REDCap: ", e$message)
-    return(list(success = FALSE, outcome_message = e$message))
-  })
+  # Submit to REDCap API with more detailed parameters
+  response <- httr::POST(
+    url = redcap_url_string,
+    body = list(
+      token = token,
+      content = "record",
+      action = "import",
+      format = "json",
+      type = "flat",
+      overwriteBehavior = "normal",
+      forceAutoNumber = "false",
+      data = data_json,
+      returnContent = "count",
+      returnFormat = "json"
+    ),
+    encode = "form"
+  )
 
-  # Process result
-  if (isTRUE(result$success)) {
-    message("Successfully submitted scholarship data, created instance ", next_inst)
+  # Check the status and response
+  status_code <- httr::status_code(response)
+  response_content <- httr::content(response, "text", encoding = "UTF-8")
+
+  message("REDCap API response status: ", status_code)
+  message("REDCap API response: ", response_content)
+
+  # Return result
+  if (status_code == 200) {
     return(list(
       success = TRUE,
-      outcome_message = paste("Successfully created scholarship entry (instance ", next_inst, ")", sep = "")
+      outcome_message = paste("Successfully created scholarship entry (instance ",
+                              next_inst, ")", sep = "")
     ))
   } else {
-    message("Failed to submit scholarship data: ", result$outcome_message)
     return(list(
       success = FALSE,
-      outcome_message = result$outcome_message
+      outcome_message = paste("Error: ", response_content, sep = "")
     ))
   }
 }
 
+# Get the next available instance for scholarship tracking
+get_next_scholarship_instance <- function(record_id, redcap_url, token) {
+  # Query REDCap for existing instances
+  response <- httr::POST(
+    url = redcap_url,
+    body = list(
+      token = token,
+      content = "record",
+      action = "export",
+      format = "json",
+      type = "flat",
+      records = record_id,
+      fields = "record_id",
+      forms = "scholarship_tracking",
+      returnFormat = "json"
+    ),
+    encode = "form"
+  )
+
+  # Process response
+  if (httr::status_code(response) != 200) {
+    message("Error querying REDCap for instances. Using instance 1.")
+    return(1)
+  }
+
+  records <- jsonlite::fromJSON(httr::content(response, "text", encoding = "UTF-8"))
+
+  # If no records found, use instance 1
+  if (length(records) == 0 || nrow(records) == 0) {
+    message("No existing scholarship instances found. Using instance 1.")
+    return(1)
+  }
+
+  # Extract the instances and find the max
+  if ("redcap_repeat_instance" %in% names(records)) {
+    instances <- records$redcap_repeat_instance
+    instances <- as.numeric(instances[!is.na(instances)])
+
+    if (length(instances) > 0) {
+      next_instance <- max(instances) + 1
+      message("Found existing instances. Next instance will be ", next_instance)
+      return(next_instance)
+    }
+  }
+
+  # Default to instance 1 if no existing instances found
+  message("No valid instances found. Using instance 1.")
+  return(1)
+}
+
+# Improved helper function that creates a new instance every time for scholarship items
 # Improved helper function that creates a new instance every time for scholarship items
 generate_instance_2 <- function(record_id, instrument_name, coach_data = NULL,
                                 redcap_uri, token) {
@@ -1794,8 +1863,9 @@ generate_instance_2 <- function(record_id, instrument_name, coach_data = NULL,
     message("coach_data is NULL. Falling back to API call.")
     # Pull data directly from REDCap without the problematic parameters
     tryCatch({
+      # FIXED: Use redcap_uri parameter instead of global redcap_url
       data <- redcap_read(
-        redcap_uri = redcap_url,
+        redcap_uri = redcap_uri,  # Use the parameter passed to the function
         token = token,
         records = record_id
       )$data
@@ -1821,21 +1891,20 @@ generate_instance_2 <- function(record_id, instrument_name, coach_data = NULL,
     })
   }
 }
-
-
 # Function to get the previous period based on current selection
 get_previous_period <- function(current_period) {
-  period_mapping <- c(
+  # Use the standardized order of periods
+  period_sequence <- c(
     "Entering Residency" = NA,  # No previous period
     "Mid Intern" = "Entering Residency",
     "End Intern" = "Mid Intern",
     "Mid PGY2" = "End Intern",
     "End PGY2" = "Mid PGY2",
     "Mid PGY3" = "End PGY2",
-    "Graduating" = NA
+    "Graduating" = "Mid PGY3"
   )
 
-  return(period_mapping[current_period])
+  return(period_sequence[current_period])
 }
 
 
@@ -1872,66 +1941,222 @@ process_current_milestone <- function(milestone_scores, resident_name, current_p
 
 
 
-# Helper lists for competencies and milestones
+# Get the next available instance for scholarship tracking
+get_next_scholarship_instance <- function(record_id, redcap_url, token) {
+  # Query REDCap for existing instances
+  response <- httr::POST(
+    url = redcap_url,
+    body = list(
+      token = token,
+      content = "record",
+      action = "export",
+      format = "json",
+      type = "flat",
+      records = record_id,
+      fields = "record_id",
+      forms = "scholarship_tracking",
+      returnFormat = "json"
+    ),
+    encode = "form"
+  )
 
-
-process_scholarship_data <- function(data, record_id, rdm_dict) {
-  cat("DEBUG: Processing scholarship data for record_id:", record_id, "\n")
-
-  # Filter by record_id
-  filtered_data <- data %>%
-    filter(record_id == record_id)
-
-  cat("DEBUG: After filtering, found", nrow(filtered_data), "rows\n")
-
-  # Skip processing if no data is found
-  if (nrow(filtered_data) == 0) {
-    return(list(
-      table_data = data.frame(
-        Scholarship_Type = character(),
-        Description = character(),
-        stringsAsFactors = FALSE
-      ),
-      completed_ps = FALSE,
-      completed_rca = FALSE
-    ))
+  # Process response
+  if (httr::status_code(response) != 200) {
+    message("Error querying REDCap for instances. Using instance 1.")
+    return(1)
   }
 
-  # Check for Patient Safety and RCA completion - handling both string "Yes" and numeric 1
-  completed_ps <- any(tolower(filtered_data$schol_ps) == "yes" | filtered_data$schol_ps == 1)
-  completed_rca <- any(tolower(filtered_data$schol_rca) == "yes" | filtered_data$schol_rca == 1)
+  records <- jsonlite::fromJSON(httr::content(response, "text", encoding = "UTF-8"))
 
-  cat("DEBUG: PS flag =", completed_ps, ", RCA flag =", completed_rca, "\n")
+  # If no records found, use instance 1
+  if (length(records) == 0 || nrow(records) == 0) {
+    message("No existing scholarship instances found. Using instance 1.")
+    return(1)
+  }
 
-  # Create a display table
-  table_data <- filtered_data %>%
-    mutate(
-      # Use the schema_type as-is since it's already the label
-      Scholarship_Type = schol_type,
+  # Extract the instances and find the max
+  if ("redcap_repeat_instance" %in% names(records)) {
+    instances <- records$redcap_repeat_instance
+    instances <- as.numeric(instances[!is.na(instances)])
 
-      # Create a description based on what's available
-      Description = case_when(
-        !is.na(schol_qi) & schol_qi != "" ~ schol_qi,
-        !is.na(schol_res) & schol_res != "" ~ schol_res,
-        !is.na(schol_cit) & schol_cit != "" ~ schol_cit,
-        !is.na(schol_comm) & schol_comm != "" ~ schol_comm,
-        TRUE ~ "No description available"
-      )
-    ) %>%
-    # Select only needed columns
-    select(Scholarship_Type, Description) %>%
-    # Filter out Patient Safety Review entries
-    filter(Scholarship_Type != "Patient Safety Review")
+    if (length(instances) > 0) {
+      next_instance <- max(instances) + 1
+      message("Found existing instances. Next instance will be ", next_instance)
+      return(next_instance)
+    }
+  }
 
-  # Return the results
-  list(
-    table_data = table_data,
-    completed_ps = completed_ps,
-    completed_rca = completed_rca
-  )
+  # Default to instance 1 if no existing instances found
+  message("No valid instances found. Using instance 1.")
+  return(1)
 }
 
-# Updated Scholarship Module UI
+# Get appropriate instance number for scholarship submissions
+get_proper_scholarship_instance <- function(record_id, redcap_url, token) {
+  # Debug message
+  message("Finding appropriate instance number for record ID: ", record_id)
+
+  # Query REDCap for existing scholarship instances for this record
+  response <- httr::POST(
+    url = redcap_url,
+    body = list(
+      token = token,
+      content = "record",
+      action = "export",
+      format = "json",
+      type = "flat",
+      records = record_id,
+      forms = "scholarship",  # Use your actual form name here
+      rawOrLabel = "raw",
+      rawOrLabelHeaders = "raw",
+      exportCheckboxLabel = "false",
+      returnFormat = "json"
+    ),
+    encode = "form"
+  )
+
+  # Check if request was successful
+  if (httr::status_code(response) != 200) {
+    message("Error querying REDCap API. Using instance 1.")
+    return(1)
+  }
+
+  # Parse the response
+  result_text <- httr::content(response, "text", encoding = "UTF-8")
+  records <- tryCatch({
+    jsonlite::fromJSON(result_text)
+  }, error = function(e) {
+    message("Error parsing JSON response: ", e$message)
+    return(NULL)
+  })
+
+  # If no records found or empty result, use instance 1
+  if (is.null(records) || length(records) == 0 || nrow(records) == 0) {
+    message("No existing scholarship records found. Using instance 1.")
+    return(1)
+  }
+
+  # Filter for only scholarship records (in case other forms came back)
+  records <- records[records$redcap_repeat_instrument == "scholarship", ]
+
+  if (nrow(records) == 0) {
+    message("No existing scholarship records found after filtering. Using instance 1.")
+    return(1)
+  }
+
+  # Get the max instance number and add 1
+  max_instance <- max(as.numeric(records$redcap_repeat_instance), na.rm = TRUE)
+  next_instance <- max_instance + 1
+
+  message("Found ", nrow(records), " existing scholarship records. Next instance will be ", next_instance)
+  return(next_instance)
+}
+# Reliable submission function for scholarship data
+reliable_scholarship_submission <- function(record_id, field_data, redcap_url, token) {
+  # Ensure record_id is character
+  record_id <- as.character(record_id)
+
+  # Get proper instance number
+  instance <- get_proper_scholarship_instance(record_id, redcap_url, token)
+  instance <- as.character(instance)
+
+  # Debug what's being submitted
+  message("Scholarship submission data:")
+  message("  record_id: ", record_id)
+  message("  redcap_repeat_instrument: scholarship")
+  message("  redcap_repeat_instance: ", instance)
+  message("  scholarship_complete: 0")
+
+  # Print all fields being submitted
+  for (field_name in names(field_data)) {
+    message("  ", field_name, ": ", field_data[[field_name]])
+  }
+
+  # Build the data payload
+  data_list <- list(
+    record_id = record_id,
+    redcap_repeat_instrument = "scholarship",
+    redcap_repeat_instance = instance,
+    scholarship_complete = "0"
+  )
+
+  # Add all the field data
+  for (field_name in names(field_data)) {
+    if (!is.null(field_data[[field_name]]) && !is.na(field_data[[field_name]])) {
+      data_list[[field_name]] <- field_data[[field_name]]
+    }
+  }
+
+  # Convert to JSON
+  data_json <- jsonlite::toJSON(list(data_list), auto_unbox = TRUE)
+
+  # Submit to REDCap
+  response <- httr::POST(
+    url = redcap_url,
+    body = list(
+      token = token,
+      content = "record",
+      action = "import",
+      format = "json",
+      type = "flat",
+      overwriteBehavior = "normal",
+      forceAutoNumber = "false",
+      data = data_json,
+      returnContent = "count",
+      returnFormat = "json"
+    ),
+    encode = "form"
+  )
+
+  # Process response
+  status_code <- httr::status_code(response)
+  response_content <- httr::content(response, "text", encoding = "UTF-8")
+
+  message("REDCap API response status: ", status_code)
+  message("REDCap API response: ", response_content)
+
+  if (status_code == 200) {
+    return(list(
+      success = TRUE,
+      outcome_message = paste("Successfully submitted scholarship data for record", record_id),
+      instance = instance
+    ))
+  } else {
+    return(list(
+      success = FALSE,
+      outcome_message = paste("Failed to submit scholarship data for record", record_id, ":", response_content),
+      instance = NULL
+    ))
+  }
+}
+
+
+# Function to filter and display scholarship data for a specific resident
+display_filtered_scholarship_data <- function(schol_data, record_id) {
+  # Debug
+  message("Filtering scholarship data for record_id: ", record_id)
+
+  # Ensure schol_data is a data frame
+  if (!is.data.frame(schol_data)) {
+    message("Error: schol_data is not a data frame")
+    return(NULL)
+  }
+
+  # Check if record_id column exists
+  if (!"record_id" %in% names(schol_data)) {
+    message("Error: record_id column not found in scholarship data")
+    return(NULL)
+  }
+
+  # Filter the data
+  filtered_data <- schol_data[schol_data$record_id == record_id, ]
+
+  message("After filtering, found ", nrow(filtered_data), " rows")
+
+  # Return the filtered data
+  return(filtered_data)
+}
+
 scholarship_module_ui <- function(id, rdm_dict){
   ns <- NS(id)
   tagList(
@@ -1945,6 +2170,12 @@ scholarship_module_ui <- function(id, rdm_dict){
       p("Obviously, if this is the first time you have done this, you will need to enter a bit more. It only needs to be what has happened since you started residency."),
       p(HTML("Last, please enter <strong>complete citations</strong>. You can use this to develop your CV, and helps us in displaying what our residents do."))
     ),
+
+    # Patient Safety Achievements moved here - right after intro
+    uiOutput(ns("achievement_notifications")),
+
+    # Horizontal rule to separate achievements from form
+    hr(),
 
     # Form for adding new scholarship
     div(
@@ -1968,10 +2199,8 @@ scholarship_module_ui <- function(id, rdm_dict){
       class = "mt-4",
       h4("Your Scholarship Activities", class = "mb-3"),
       p("This table shows your scholarship activities recorded in the system:"),
-      DTOutput(ns("scholarship_table")),
-
-      # Patient Safety Achievements without extra div
-      uiOutput(ns("achievement_notifications"))
+      DTOutput(ns("scholarship_table"))
+      # Achievement notifications moved to top of page
     ),
 
     # Next button at the bottom
@@ -1983,7 +2212,7 @@ scholarship_module_ui <- function(id, rdm_dict){
 }
 
 
-scholarship_module_server <- function(id, rdm_dict, record_id, schol_data = NULL) {
+scholarship_module_server <- function(id, rdm_dict, record_id, schol_data = NULL, token = NULL) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
@@ -2002,6 +2231,9 @@ scholarship_module_server <- function(id, rdm_dict, record_id, schol_data = NULL
       req(record_id())
       cat("DEBUG: Creating scholarship_results for record ID:", record_id(), "\n")
 
+      # Get the actual record_id value
+      actual_record_id <- if (is.reactive(record_id)) record_id() else record_id
+
       # Use the passed parameter instead of referencing a global variable
       if (is.null(schol_data)) {
         cat("DEBUG: schol_data is NULL\n")
@@ -2016,11 +2248,119 @@ scholarship_module_server <- function(id, rdm_dict, record_id, schol_data = NULL
         )
       } else {
         cat("DEBUG: Processing scholarship data\n")
-        result <- process_scholarship_data(schol_data, record_id(), rdm_dict)
+
+        # Handle schol_data being a reactive
+        actual_data <- if (is.reactive(schol_data)) schol_data() else schol_data
+
+        # Make sure we have valid data
+        if (!is.data.frame(actual_data)) {
+          cat("DEBUG: schol_data is not a data frame\n")
+          return(list(
+            table_data = data.frame(
+              Scholarship_Type = "No scholarship activities found",
+              Description = "",
+              stringsAsFactors = FALSE
+            ),
+            completed_ps = FALSE,
+            completed_rca = FALSE
+          ))
+        }
+
+        result <- process_scholarship_data(actual_data, actual_record_id, rdm_dict)
         cat("DEBUG: Process complete, PS:", result$completed_ps, "RCA:", result$completed_rca, "\n")
         result
       }
     })
+
+    # Updated process_scholarship_data function to handle actual data format
+    process_scholarship_data <- function(data, record_id, rdm_dict) {
+      cat("DEBUG: Processing scholarship data for record_id:", record_id, "\n")
+
+      # Make sure record_id is a character
+      record_id <- as.character(record_id)
+
+      # Filter by record_id
+      filtered_data <- data[data$record_id == record_id, ]
+
+      cat("DEBUG: After filtering, found", nrow(filtered_data), "rows\n")
+
+      # Skip processing if no data is found
+      if (nrow(filtered_data) == 0) {
+        return(list(
+          table_data = data.frame(
+            Scholarship_Type = character(0),
+            Description = character(0),
+            stringsAsFactors = FALSE
+          ),
+          completed_ps = FALSE,
+          completed_rca = FALSE
+        ))
+      }
+
+      # Check for Patient Safety and RCA completion
+      completed_ps <- FALSE
+      completed_rca <- FALSE
+
+      # Check if columns exist first
+      if ("schol_ps" %in% names(filtered_data)) {
+        completed_ps <- any(filtered_data$schol_ps == "1" |
+                              filtered_data$schol_ps == 1 |
+                              filtered_data$schol_ps == "Yes",
+                            na.rm = TRUE)
+      }
+
+      if ("schol_rca" %in% names(filtered_data)) {
+        completed_rca <- any(filtered_data$schol_rca == "1" |
+                               filtered_data$schol_rca == 1 |
+                               filtered_data$schol_rca == "Yes",
+                             na.rm = TRUE)
+      }
+
+      cat("DEBUG: PS flag =", completed_ps, ", RCA flag =", completed_rca, "\n")
+
+      # Create a display table based on what's available
+      if ("schol_type" %in% names(filtered_data)) {
+        # Create a safe version that avoids using field names that might not exist
+        table_data <- data.frame(
+          Scholarship_Type = as.character(filtered_data$schol_type),
+          Description = "",
+          stringsAsFactors = FALSE
+        )
+
+        # Add description if available, checking each possible field
+        for (i in 1:nrow(table_data)) {
+          desc <- ""
+
+          if ("schol_cit" %in% names(filtered_data) && !is.na(filtered_data$schol_cit[i])) {
+            desc <- filtered_data$schol_cit[i]
+          } else if ("schol_res" %in% names(filtered_data) && !is.na(filtered_data$schol_res[i])) {
+            desc <- filtered_data$schol_res[i]
+          } else if ("schol_qi" %in% names(filtered_data) && !is.na(filtered_data$schol_qi[i])) {
+            desc <- filtered_data$schol_qi[i]
+          } else if ("schol_pres_conf" %in% names(filtered_data) && !is.na(filtered_data$schol_pres_conf[i])) {
+            desc <- filtered_data$schol_pres_conf[i]
+          } else if ("schol_comm" %in% names(filtered_data) && !is.na(filtered_data$schol_comm[i])) {
+            desc <- filtered_data$schol_comm[i]
+          }
+
+          table_data$Description[i] <- desc
+        }
+      } else {
+        # No schol_type column - create empty table
+        table_data <- data.frame(
+          Scholarship_Type = character(0),
+          Description = character(0),
+          stringsAsFactors = FALSE
+        )
+      }
+
+      # Return the results
+      list(
+        table_data = table_data,
+        completed_ps = completed_ps,
+        completed_rca = completed_rca
+      )
+    }
 
     # Render the table
     output$scholarship_table <- renderDT({
@@ -2040,6 +2380,7 @@ scholarship_module_server <- function(id, rdm_dict, record_id, schol_data = NULL
     })
 
     # Replace the achievement_notifications renderUI with this version
+    # Replace the achievement_notifications renderUI with this updated version
     output$achievement_notifications <- renderUI({
       # Get results
       results <- scholarship_results()
@@ -2052,14 +2393,10 @@ scholarship_module_server <- function(id, rdm_dict, record_id, schol_data = NULL
       completed_rca <- results$completed_rca
       cat("DEBUG: PS flag =", completed_ps, ", RCA flag =", completed_rca, "\n")
 
-      # Skip if none are completed
-      if (!isTRUE(completed_ps) && !isTRUE(completed_rca)) {
-        return(NULL)
-      }
-
-      # Build notifications
+      # Build notifications - ALWAYS show status for both PS and RCA
       notifications <- tagList()
 
+      # Patient Safety Review status
       if (isTRUE(completed_ps)) {
         notifications <- tagAppendChild(
           notifications,
@@ -2071,8 +2408,20 @@ scholarship_module_server <- function(id, rdm_dict, record_id, schol_data = NULL
                    )
           )
         )
+      } else {
+        notifications <- tagAppendChild(
+          notifications,
+          tags$div(class = "alert alert-danger mt-3",
+                   tags$p(
+                     tags$span(icon("exclamation-circle"), class = "text-danger me-2"),
+                     tags$strong("Pending: "),
+                     "You have not yet completed a Patient Safety Review"
+                   )
+          )
+        )
       }
 
+      # Root Cause Analysis status
       if (isTRUE(completed_rca)) {
         notifications <- tagAppendChild(
           notifications,
@@ -2081,6 +2430,17 @@ scholarship_module_server <- function(id, rdm_dict, record_id, schol_data = NULL
                      tags$span(icon("check-circle"), class = "text-success me-2"),
                      tags$strong("Achievement: "),
                      "You have completed a Root Cause Analysis"
+                   )
+          )
+        )
+      } else {
+        notifications <- tagAppendChild(
+          notifications,
+          tags$div(class = "alert alert-danger mt-3",
+                   tags$p(
+                     tags$span(icon("exclamation-circle"), class = "text-danger me-2"),
+                     tags$strong("Pending: "),
+                     "You have not yet completed a Root Cause Analysis"
                    )
           )
         )
@@ -2315,18 +2675,226 @@ scholarship_module_server <- function(id, rdm_dict, record_id, schol_data = NULL
       }
     })
 
-    # Save a presentation
+    # ---- IMPROVED FUNCTIONS FOR BETTER SUBMISSION ----
+
+    # FIXED: Get appropriate instance number for scholarship submissions
+    get_proper_scholarship_instance <- function(record_id, redcap_url, token) {
+      # Debug message
+      message("Finding appropriate instance number for record ID: ", record_id)
+
+      # Query REDCap for existing scholarship instances for this record
+      response <- httr::POST(
+        url = redcap_url,
+        body = list(
+          token = token,
+          content = "record",
+          action = "export",
+          format = "json",
+          type = "flat",
+          records = record_id,
+          forms = "scholarship",  # Use your actual form name here
+          rawOrLabel = "raw",
+          rawOrLabelHeaders = "raw",
+          exportCheckboxLabel = "false",
+          returnFormat = "json"
+        ),
+        encode = "form"
+      )
+
+      # Check if request was successful
+      if (httr::status_code(response) != 200) {
+        message("Error querying REDCap API. Using timestamp instance.")
+        # Use timestamp as fallback
+        timestamp <- as.numeric(format(Sys.time(), "%Y%m%d%H%M%S"))
+        return(timestamp %% 10000)
+      }
+
+      # Parse the response
+      result_text <- httr::content(response, "text", encoding = "UTF-8")
+      records <- tryCatch({
+        jsonlite::fromJSON(result_text)
+      }, error = function(e) {
+        message("Error parsing JSON response: ", e$message)
+        # Use timestamp as fallback
+        timestamp <- as.numeric(format(Sys.time(), "%Y%m%d%H%M%S"))
+        return(timestamp %% 10000)
+      })
+
+      # If no records found or empty result, use timestamp-based instance
+      if (is.null(records) || length(records) == 0 || nrow(records) == 0) {
+        message("No existing scholarship records found. Using timestamp instance.")
+        timestamp <- as.numeric(format(Sys.time(), "%Y%m%d%H%M%S"))
+        return(timestamp %% 10000)
+      }
+
+      # Filter for only scholarship records (in case other forms came back)
+      records <- records[records$redcap_repeat_instrument == "scholarship", ]
+
+      if (nrow(records) == 0) {
+        message("No existing scholarship records found after filtering. Using timestamp instance.")
+        timestamp <- as.numeric(format(Sys.time(), "%Y%m%d%H%M%S"))
+        return(timestamp %% 10000)
+      }
+
+      # Get the max instance number and add 1
+      if ("redcap_repeat_instance" %in% names(records)) {
+        instances <- as.numeric(records$redcap_repeat_instance)
+        if (length(instances) > 0 && !all(is.na(instances))) {
+          max_instance <- max(instances, na.rm = TRUE)
+          next_instance <- max_instance + 1
+          message("Found ", nrow(records), " existing scholarship records. Next instance will be ", next_instance)
+          return(next_instance)
+        }
+      }
+
+      # Fallback to timestamp if something went wrong
+      message("Could not determine next instance. Using timestamp.")
+      timestamp <- as.numeric(format(Sys.time(), "%Y%m%d%H%M%S"))
+      return(timestamp %% 10000)
+    }
+
+    # FIXED: Reliable submission function for scholarship data
+    reliable_scholarship_submission <- function(record_id, field_data, redcap_url, token) {
+      # Ensure record_id is character
+      record_id <- as.character(record_id)
+
+      # Get proper instance number - ALWAYS GET A NEW ONE
+      timestamp <- as.numeric(format(Sys.time(), "%Y%m%d%H%M%S"))
+      instance <- as.character(timestamp %% 10000)
+      message("Using timestamp-based instance number: ", instance, " for scholarship")
+
+      # Debug what's being submitted
+      message("Scholarship submission data:")
+      message("  record_id: ", record_id)
+      message("  redcap_repeat_instrument: scholarship")
+      message("  redcap_repeat_instance: ", instance)
+      message("  scholarship_complete: 0")
+
+      # Print all fields being submitted
+      for (field_name in names(field_data)) {
+        message("  ", field_name, ": ", field_data[[field_name]])
+      }
+
+      # Build the data payload
+      data_list <- list(
+        record_id = record_id,
+        redcap_repeat_instrument = "scholarship",
+        redcap_repeat_instance = instance,
+        scholarship_complete = "0"
+      )
+
+      # Add all the field data
+      for (field_name in names(field_data)) {
+        if (!is.null(field_data[[field_name]]) && !is.na(field_data[[field_name]])) {
+          data_list[[field_name]] <- field_data[[field_name]]
+        }
+      }
+
+      # Convert to JSON
+      data_json <- jsonlite::toJSON(list(data_list), auto_unbox = TRUE)
+
+      # Submit to REDCap
+      response <- httr::POST(
+        url = redcap_url,
+        body = list(
+          token = token,
+          content = "record",
+          action = "import",
+          format = "json",
+          type = "flat",
+          overwriteBehavior = "normal",
+          forceAutoNumber = "false",
+          data = data_json,
+          returnContent = "count",
+          returnFormat = "json"
+        ),
+        encode = "form"
+      )
+
+      # Process response
+      status_code <- httr::status_code(response)
+      response_content <- httr::content(response, "text", encoding = "UTF-8")
+
+      message("REDCap API response status: ", status_code)
+      message("REDCap API response: ", response_content)
+
+      if (status_code == 200) {
+        return(list(
+          success = TRUE,
+          outcome_message = paste("Successfully submitted scholarship data for record", record_id),
+          instance = instance
+        ))
+      } else {
+        return(list(
+          success = FALSE,
+          outcome_message = paste("Failed to submit scholarship data for record", record_id, ":", response_content),
+          instance = NULL
+        ))
+      }
+    }
+
+    # Handle scholarship submission - wrapper function that uses the reliable submission
+    handle_scholarship_submission <- function(record_id, values, token = NULL) {
+      # Use hardcoded URL
+      redcap_url_string <- "https://redcapsurvey.slu.edu/api/"
+
+      # Get token if not provided
+      if (is.null(token)) {
+        if (exists("rdm_token", envir = parent.frame())) {
+          token <- get("rdm_token", envir = parent.frame())
+        } else if (exists("rdm_token", envir = .GlobalEnv)) {
+          token <- get("rdm_token", envir = .GlobalEnv)
+        } else {
+          stop("REDCap token not found")
+        }
+      }
+
+      # Get record_id
+      actual_record_id <- if (is.reactive(record_id)) record_id() else record_id
+
+      # Add debugging for all values
+      message("SUBMITTING SCHOLARSHIP VALUES:")
+      for (k in names(values)) {
+        message("  ", k, " = ", values[[k]])
+      }
+
+      # Process Yes/No fields
+      yes_no_fields <- c("schol_ps", "schol_rca", "schol_pres", "schol_pub")
+      for (field in names(values)) {
+        if (field %in% yes_no_fields) {
+          if (values[[field]] == "Yes" || values[[field]] == 1) {
+            values[[field]] <- "1"
+          } else if (values[[field]] == "No" || values[[field]] == 0) {
+            values[[field]] <- "0"
+          }
+        }
+      }
+
+      # Use the reliable submission function
+      return(reliable_scholarship_submission(
+        record_id = actual_record_id,
+        field_data = values,
+        redcap_url = redcap_url_string,
+        token = token
+      ))
+    }
+
+    # Save a presentation using the reliable submission function
     observeEvent(input$save_pres, {
       removeModal()
+
+      message("Saving presentation with citation: ", input$p_cit)
+
       handle_scholarship_submission(
-        record_id,
-        list(
+        record_id = record_id,
+        values = list(
           schol_type = input$type,
           schol_pres_type = input$p_type,
           schol_pres_conf = input$p_conf,
           schol_cit = input$p_cit,
-          schol_pres = 1  # Explicitly set this to 1 (Yes)
-        )
+          schol_pres = "Yes"  # Explicitly set this to Yes
+        ),
+        token = token  # Pass the token parameter
       )
       showConfirmPresModal()
     })
@@ -2344,16 +2912,20 @@ scholarship_module_server <- function(id, rdm_dict, record_id, schol_data = NULL
       }
     })
 
-    # Save a publication
+    # Save a publication using the reliable submission function
     observeEvent(input$save_pub, {
       removeModal()
+
+      message("Saving publication with citation: ", input$pub_cit)
+
       handle_scholarship_submission(
-        record_id,
-        list(
+        record_id = record_id,
+        values = list(
           schol_type = input$type,
-          schol_cit = input$pub_cit,
-          schol_pub = 1  # Explicitly set this to 1 (Yes)
-        )
+          schol_cit = input$pub_cit,  # This is the citation field that must be saved
+          schol_pub = "Yes"  # Explicitly set this to Yes
+        ),
+        token = token  # Pass the token parameter
       )
       showConfirmPubModal()
     })
@@ -2376,7 +2948,13 @@ scholarship_module_server <- function(id, rdm_dict, record_id, schol_data = NULL
         "schol_ps",           # patient safety
         "schol_rca",
         "schol_pres",         # Added these Yes/No fields
-        "schol_pub"
+        "schol_pub",
+        "schol_cit",          # Include citation field
+        "schol_pres_type",
+        "schol_pres_conf",
+        "schol_comm",
+        "schol_comm_type",
+        "schol_comm_other"
       )
 
       # Filter only the keys that actually exist in vals
@@ -2385,7 +2963,7 @@ scholarship_module_server <- function(id, rdm_dict, record_id, schol_data = NULL
       # Get only the values that exist and ensure they're all vectors
       project_data <- list()
       for (k in keep) {
-        if (!is.null(vals[[k]])) {
+        if (!is.null(vals[[k]]) && vals[[k]] != "") {
           # Convert Yes/No values to numeric
           if (k %in% c("schol_ps", "schol_rca", "schol_pres", "schol_pub")) {
             project_data[[k]] <- convert_yes_no(vals[[k]])
@@ -2405,13 +2983,19 @@ scholarship_module_server <- function(id, rdm_dict, record_id, schol_data = NULL
 
       ## Only submit if we have data to submit
       if (length(project_data) > 0) {
-        ## now submit
+        ## now submit using the reliable submission function
         tryCatch({
-          handle_scholarship_submission(
+          result <- handle_scholarship_submission(
             record_id = record_id,
-            values = project_data
+            values = project_data,
+            token = token  # Pass the token parameter
           )
-          showNotification("Project saved", type = "message")
+
+          if (result$success) {
+            showNotification("Project saved", type = "message")
+          } else {
+            showNotification(paste("Error saving project:", result$outcome_message), type = "error")
+          }
         }, error = function(e) {
           showNotification(paste("Error saving project:", e$message), type = "error")
         })
@@ -2425,52 +3009,185 @@ scholarship_module_server <- function(id, rdm_dict, record_id, schol_data = NULL
   })
 }
 
-
-# Helper function for Yes/No conversion
+# Simple helper function
 convert_yes_no <- function(value) {
-  if (is.character(value)) {
-    if (value == "Yes") return(1)
-    if (value == "No") return(0)
+  if (is.null(value) || length(value) == 0) {
+    return(NULL)
   }
-  return(value)
+  if (is.numeric(value)) {
+    return(value)  # Already numeric
+  }
+  if (tolower(as.character(value)) == "yes") {
+    return(1)
+  } else if (tolower(as.character(value)) == "no") {
+    return(0)
+  }
+  return(value)  # Return original if not Yes/No
 }
 
-# Handle scholarship submission
-handle_scholarship_submission <- function(record_id, values) {
-  if (is.reactive(record_id)) {
-    record_id <- record_id()
-  }
 
-  # Create the submission payload
-  payload <- list(
-    record_id = record_id,
-    redcap_repeat_instrument = "scholarship"
+
+
+
+
+reliable_s_eval_submission <- function(record_id, period, processed_inputs, redcap_url, token) {
+  # Ensure record_id is character
+  record_id <- as.character(record_id)
+
+  # Map text period to numeric code
+  period_mapping <- c(
+    "Entering Residency" = 7,
+    "Mid Intern" = 1,
+    "End Intern" = 2,
+    "Mid PGY2" = 3,
+    "End PGY2" = 4,
+    "Mid PGY3" = 5,
+    "Graduating" = 6
   )
 
-  # Add all values to the payload
-  for (field_name in names(values)) {
-    payload[[field_name]] <- values[[field_name]]
+  # Get period code - this will also be our instance number
+  if (is.character(period) && period %in% names(period_mapping)) {
+    period_code <- as.character(period_mapping[period])
+    # Use period code as instance number
+    instance_number <- period_code
+  } else if (is.numeric(period)) {
+    period_code <- as.character(period)
+    instance_number <- period_code
+  } else {
+    # Default fallback
+    period_code <- "1"
+    instance_number <- "1"
   }
 
-  # Generate a new instance number or use an existing one if appropriate
-  instance_number <- generate_new_instance(
-    record_id = record_id,
-    instrument_name = "scholarship",
-    coach_data = NULL,  # Adjust based on your needs
-    redcap_uri = url,
-    token = rdm_token
+  message("Using period-based instance number: ", instance_number, " for s_eval")
+
+  # Build data manually in the exact format REDCap expects
+  data_str <- sprintf(
+    '[{"record_id":"%s","redcap_repeat_instrument":"s_eval","redcap_repeat_instance":"%s","s_e_date":"%s","s_e_period":"%s","s_eval_complete":"0"',
+    record_id, instance_number, format(Sys.Date(), "%Y-%m-%d"), period_code
   )
 
-  # Set the instance number
-  payload$redcap_repeat_instance <- as.numeric(instance_number)
+  # Add all fields
+  for (field in names(processed_inputs)) {
+    if (!is.null(processed_inputs[[field]]) && !is.na(processed_inputs[[field]])) {
+      # Escape quotes in values
+      value <- gsub('"', '\\"', as.character(processed_inputs[[field]]))
+      data_str <- paste0(data_str, sprintf(',"%s":"%s"', field, value))
+    }
+  }
+
+  # Close the object and array
+  data_str <- paste0(data_str, "}]")
+
+  message("Submitting manual JSON data (first 100 chars): ", substr(data_str, 1, 100))
 
   # Submit to REDCap
-  result <- direct_redcap_import(
-    data = payload,
-    record_id = record_id,
-    url = url,
-    token = rdm_token
+  response <- httr::POST(
+    url = redcap_url,
+    body = list(
+      token = token,
+      content = "record",
+      action = "import",
+      format = "json",
+      type = "flat",
+      overwriteBehavior = "normal",
+      forceAutoNumber = "false",
+      data = data_str,
+      returnContent = "count",
+      returnFormat = "json"
+    ),
+    encode = "form"
   )
 
-  return(result)
+  # Process response
+  status_code <- httr::status_code(response)
+  response_content <- httr::content(response, "text", encoding = "UTF-8")
+
+  message("REDCap API response status: ", status_code)
+  message("REDCap API response: ", response_content)
+
+  if (status_code == 200) {
+    return(list(
+      success = TRUE,
+      outcome_message = paste("Successfully submitted data for record", record_id)
+    ))
+  } else {
+    return(list(
+      success = FALSE,
+      outcome_message = paste("Failed to submit data for record", record_id, ":", response_content)
+    ))
+  }
+}
+
+
+# Generic reliable submission function for any instrument
+reliable_redcap_submission <- function(record_id, instrument, instance, fields, redcap_url, token) {
+  # Ensure record_id is character
+  record_id <- as.character(record_id)
+
+  # Ensure instance is character
+  instance <- as.character(instance)
+
+  message("Using instance number: ", instance, " for ", instrument)
+
+  # Build data manually in the exact format REDCap expects
+  data_str <- sprintf(
+    '[{"record_id":"%s","redcap_repeat_instrument":"%s","redcap_repeat_instance":"%s"',
+    record_id, instrument, instance
+  )
+
+  # Add completion field
+  complete_field <- paste0(instrument, "_complete")
+  data_str <- paste0(data_str, sprintf(',"%s":"0"', complete_field))
+
+  # Add all other fields
+  for (field in names(fields)) {
+    if (!is.null(fields[[field]]) && !is.na(fields[[field]])) {
+      # Escape quotes in values
+      value <- gsub('"', '\\"', as.character(fields[[field]]))
+      data_str <- paste0(data_str, sprintf(',"%s":"%s"', field, value))
+    }
+  }
+
+  # Close the object and array
+  data_str <- paste0(data_str, "}]")
+
+  message("Submitting manual JSON data (first 100 chars): ", substr(data_str, 1, 100))
+
+  # Submit to REDCap
+  response <- httr::POST(
+    url = redcap_url,
+    body = list(
+      token = token,
+      content = "record",
+      action = "import",
+      format = "json",
+      type = "flat",
+      overwriteBehavior = "normal",
+      forceAutoNumber = "false",
+      data = data_str,
+      returnContent = "count",
+      returnFormat = "json"
+    ),
+    encode = "form"
+  )
+
+  # Process response
+  status_code <- httr::status_code(response)
+  response_content <- httr::content(response, "text", encoding = "UTF-8")
+
+  message("REDCap API response status: ", status_code)
+  message("REDCap API response: ", response_content)
+
+  if (status_code == 200) {
+    return(list(
+      success = TRUE,
+      outcome_message = paste("Successfully submitted data for record", record_id)
+    ))
+  } else {
+    return(list(
+      success = FALSE,
+      outcome_message = paste("Failed to submit data for record", record_id, ":", response_content)
+    ))
+  }
 }

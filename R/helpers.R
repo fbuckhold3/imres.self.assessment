@@ -3025,10 +3025,136 @@ convert_yes_no <- function(value) {
   return(value)  # Return original if not Yes/No
 }
 
+#' Safely escape a string for JSON inclusion
+#'
+#' @param str String to escape
+#' @return Escaped string safe for JSON
+#' @export
+escape_json_string <- function(str) {
+  if (is.null(str) || is.na(str) || !is.character(str)) return("")
 
+  # Basic string replacement for critical characters
+  # Replace quotes with escaped quotes
+  str <- gsub('"', '\\"', str)
 
+  # Replace backslashes with escaped backslashes
+  str <- gsub("\\\\", "\\\\\\\\", str)
 
+  # Replace problematic whitespace with spaces
+  str <- gsub("\n", " ", str)
+  str <- gsub("\r", " ", str)
+  str <- gsub("\t", " ", str)
 
+  # Remove control characters (simple approach without Unicode escapes)
+  clean_str <- ""
+  for (i in 1:nchar(str)) {
+    char <- substr(str, i, i)
+    char_code <- as.integer(charToRaw(char)[1])
+    if (is.na(char_code) || char_code >= 32) {
+      clean_str <- paste0(clean_str, char)
+    }
+  }
+
+  return(clean_str)
+}
+
+reliable_scholarship_submission <- function(record_id, field_data, redcap_url, token) {
+  # Ensure record_id is character
+  record_id <- as.character(record_id)
+
+  # Get proper instance number
+  instance <- get_proper_scholarship_instance(record_id, redcap_url, token)
+  instance <- as.character(instance)
+
+  # Debug what's being submitted
+  message("Scholarship submission data:")
+  message("  record_id: ", record_id)
+  message("  redcap_repeat_instrument: scholarship")
+  message("  redcap_repeat_instance: ", instance)
+  message("  scholarship_complete: 0")
+
+  # Print all fields being submitted (with sanitized values for logging)
+  for (field_name in names(field_data)) {
+    safe_value <- if (is.null(field_data[[field_name]]) || is.na(field_data[[field_name]])) {
+      "NULL or NA"
+    } else {
+      # Limit length of logged values for clarity
+      val <- as.character(field_data[[field_name]])
+      if (nchar(val) > 30) {
+        paste0(substr(val, 1, 30), "...")
+      } else {
+        val
+      }
+    }
+    message("  ", field_name, ": ", safe_value)
+  }
+
+  # Try-catch block to handle any errors
+  tryCatch({
+    # Use manual JSON construction with the improved escape_json_string function
+    data_str <- sprintf('[{"record_id":"%s","redcap_repeat_instrument":"scholarship","redcap_repeat_instance":"%s","scholarship_complete":"0"',
+                        escape_json_string(record_id), escape_json_string(instance))
+
+    # Add all fields with proper escaping
+    for (field_name in names(field_data)) {
+      if (!is.null(field_data[[field_name]]) && !is.na(field_data[[field_name]])) {
+        value <- escape_json_string(field_data[[field_name]])
+        data_str <- paste0(data_str, sprintf(',"%s":"%s"', field_name, value))
+      }
+    }
+
+    # Close JSON structure
+    data_str <- paste0(data_str, "}]")
+
+    message("JSON data (first 100 chars): ", substr(data_str, 1, 100))
+
+    # Submit to REDCap
+    response <- httr::POST(
+      url = redcap_url,
+      body = list(
+        token = token,
+        content = "record",
+        action = "import",
+        format = "json",
+        type = "flat",
+        overwriteBehavior = "normal",
+        forceAutoNumber = "false",
+        data = data_str,
+        returnContent = "count",
+        returnFormat = "json"
+      ),
+      encode = "form"
+    )
+
+    # Process response
+    status_code <- httr::status_code(response)
+    response_content <- httr::content(response, "text", encoding = "UTF-8")
+    message("REDCap API response status: ", status_code)
+    message("REDCap API response: ", response_content)
+
+    if (status_code == 200) {
+      return(list(
+        success = TRUE,
+        outcome_message = paste("Successfully submitted scholarship data for record", record_id),
+        instance = instance
+      ))
+    } else {
+      return(list(
+        success = FALSE,
+        outcome_message = paste("Failed to submit data for record", record_id, ":", response_content),
+        instance = NULL
+      ))
+    }
+  }, error = function(e) {
+    # Capture any errors in JSON processing or API call
+    message("ERROR in scholarship submission: ", e$message)
+    return(list(
+      success = FALSE,
+      outcome_message = paste("Error in submission process:", e$message),
+      instance = NULL
+    ))
+  })
+}
 
 reliable_s_eval_submission <- function(record_id, period, processed_inputs, redcap_url, token) {
   # Ensure record_id is character
@@ -3048,77 +3174,85 @@ reliable_s_eval_submission <- function(record_id, period, processed_inputs, redc
   # Get period code - this will also be our instance number
   if (is.character(period) && period %in% names(period_mapping)) {
     period_code <- as.character(period_mapping[period])
-    # Use period code as instance number
     instance_number <- period_code
   } else if (is.numeric(period)) {
     period_code <- as.character(period)
     instance_number <- period_code
   } else {
-    # Default fallback
     period_code <- "1"
     instance_number <- "1"
   }
 
   message("Using period-based instance number: ", instance_number, " for s_eval")
 
-  # Build data manually in the exact format REDCap expects
-  data_str <- sprintf(
-    '[{"record_id":"%s","redcap_repeat_instrument":"s_eval","redcap_repeat_instance":"%s","s_e_date":"%s","s_e_period":"%s","s_eval_complete":"0"',
-    record_id, instance_number, format(Sys.Date(), "%Y-%m-%d"), period_code
-  )
+  # Build data with robust character escaping
+  tryCatch({
+    # Start the JSON structure
+    data_str <- sprintf('[{"record_id":"%s","redcap_repeat_instrument":"s_eval","redcap_repeat_instance":"%s","s_e_date":"%s","s_e_period":"%s","s_eval_complete":"0"',
+                        escape_json_string(record_id),
+                        escape_json_string(instance_number),
+                        escape_json_string(format(Sys.Date(), "%Y-%m-%d")),
+                        escape_json_string(period_code)
+    )
 
-  # Add all fields
-  for (field in names(processed_inputs)) {
-    if (!is.null(processed_inputs[[field]]) && !is.na(processed_inputs[[field]])) {
-      # Escape quotes in values
-      value <- gsub('"', '\\"', as.character(processed_inputs[[field]]))
-      data_str <- paste0(data_str, sprintf(',"%s":"%s"', field, value))
+    # Add all fields with proper escaping
+    for (field in names(processed_inputs)) {
+      if (!is.null(processed_inputs[[field]]) && !is.na(processed_inputs[[field]])) {
+        value <- escape_json_string(processed_inputs[[field]])
+        data_str <- paste0(data_str, sprintf(',"%s":"%s"', field, value))
+      }
     }
-  }
 
-  # Close the object and array
-  data_str <- paste0(data_str, "}]")
+    # Close the object and array
+    data_str <- paste0(data_str, "}]")
 
-  message("Submitting manual JSON data (first 100 chars): ", substr(data_str, 1, 100))
+    message("Submitting JSON data (first 100 chars): ", substr(data_str, 1, 100))
 
-  # Submit to REDCap
-  response <- httr::POST(
-    url = redcap_url,
-    body = list(
-      token = token,
-      content = "record",
-      action = "import",
-      format = "json",
-      type = "flat",
-      overwriteBehavior = "normal",
-      forceAutoNumber = "false",
-      data = data_str,
-      returnContent = "count",
-      returnFormat = "json"
-    ),
-    encode = "form"
-  )
+    # Submit to REDCap
+    response <- httr::POST(
+      url = redcap_url,
+      body = list(
+        token = token,
+        content = "record",
+        action = "import",
+        format = "json",
+        type = "flat",
+        overwriteBehavior = "normal",
+        forceAutoNumber = "false",
+        data = data_str,
+        returnContent = "count",
+        returnFormat = "json"
+      ),
+      encode = "form"
+    )
 
-  # Process response
-  status_code <- httr::status_code(response)
-  response_content <- httr::content(response, "text", encoding = "UTF-8")
+    # Process response
+    status_code <- httr::status_code(response)
+    response_content <- httr::content(response, "text", encoding = "UTF-8")
 
-  message("REDCap API response status: ", status_code)
-  message("REDCap API response: ", response_content)
+    message("REDCap API response status: ", status_code)
+    message("REDCap API response: ", response_content)
 
-  if (status_code == 200) {
-    return(list(
-      success = TRUE,
-      outcome_message = paste("Successfully submitted data for record", record_id)
-    ))
-  } else {
+    if (status_code == 200) {
+      return(list(
+        success = TRUE,
+        outcome_message = paste("Successfully submitted data for record", record_id)
+      ))
+    } else {
+      return(list(
+        success = FALSE,
+        outcome_message = paste("Failed to submit data for record", record_id, ":", response_content)
+      ))
+    }
+  }, error = function(e) {
+    # Handle any JSON processing errors
+    message("Error processing JSON: ", e$message)
     return(list(
       success = FALSE,
-      outcome_message = paste("Failed to submit data for record", record_id, ":", response_content)
+      outcome_message = paste("JSON processing error:", e$message)
     ))
-  }
+  })
 }
-
 
 # Generic reliable submission function for any instrument
 reliable_redcap_submission <- function(record_id, instrument, instance, fields, redcap_url, token) {

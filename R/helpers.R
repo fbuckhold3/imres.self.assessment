@@ -3049,6 +3049,29 @@ escape_json_string <- function(str) {
   return(str)
 }
 
+# Helper function to safely look up subcompetency index
+safe_match <- function(subcomp, vec) {
+  if (is.null(subcomp) || is.null(vec)) {
+    return(NA)
+  }
+
+  # Try to find the exact match
+  index <- match(subcomp, vec)
+
+  # If not found and subcomp has a format like "PC_1", try "PC1"
+  if (is.na(index) && grepl("_", subcomp)) {
+    alt_subcomp <- gsub("_", "", subcomp)
+    index <- match(alt_subcomp, vec)
+  }
+
+  # Return as character
+  if (!is.na(index)) {
+    return(as.character(index))
+  } else {
+    return(NA)
+  }
+}
+
 reliable_scholarship_submission <- function(record_id, field_data, redcap_url, token) {
   # Ensure record_id is character
   record_id <- as.character(record_id)

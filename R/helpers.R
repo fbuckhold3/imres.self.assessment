@@ -3030,32 +3030,23 @@ convert_yes_no <- function(value) {
 #' @param str String to escape
 #' @return Escaped string safe for JSON
 #' @export
+# Function to safely escape JSON strings
 escape_json_string <- function(str) {
-  if (is.null(str) || is.na(str) || !is.character(str)) return("")
+  if (is.null(str)) return("")
+  if (!is.character(str)) str <- as.character(str)
 
-  # Basic string replacement for critical characters
-  # Replace quotes with escaped quotes
-  str <- gsub('"', '\\"', str)
+  # Replace any backslashes first
+  str <- gsub('\\', '\\\\', str, fixed = TRUE)
 
-  # Replace backslashes with escaped backslashes
-  str <- gsub("\\\\", "\\\\\\\\", str)
+  # Then replace double quotes
+  str <- gsub('"', '\\"', str, fixed = TRUE)
 
-  # Replace problematic whitespace with spaces
-  str <- gsub("\n", " ", str)
-  str <- gsub("\r", " ", str)
-  str <- gsub("\t", " ", str)
+  # Handle other special characters if needed
+  str <- gsub('\n', '\\n', str, fixed = TRUE)
+  str <- gsub('\r', '\\r', str, fixed = TRUE)
+  str <- gsub('\t', '\\t', str, fixed = TRUE)
 
-  # Remove control characters (simple approach without Unicode escapes)
-  clean_str <- ""
-  for (i in 1:nchar(str)) {
-    char <- substr(str, i, i)
-    char_code <- as.integer(charToRaw(char)[1])
-    if (is.na(char_code) || char_code >= 32) {
-      clean_str <- paste0(clean_str, char)
-    }
-  }
-
-  return(clean_str)
+  return(str)
 }
 
 reliable_scholarship_submission <- function(record_id, field_data, redcap_url, token) {

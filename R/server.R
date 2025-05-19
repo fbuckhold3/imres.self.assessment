@@ -891,8 +891,6 @@ server <- function(input, output, session) {
         fields[["goal_level_pcmk"]] <- g$selected_level
         fields[["goal_level_r_pcmk"]] <- g$selected_row
         fields[["how_pcmk"]] <- g$how_to_achieve
-
-        # IMPORTANT: Do NOT set review_q2_pcmk here
       }
       else if (grp == "sbppbl") {
         fields[["prior_goal_sbppbl"]] <- g$had_prior_goal
@@ -901,8 +899,6 @@ server <- function(input, output, session) {
         fields[["goal_level_sbppbl"]] <- g$selected_level
         fields[["goal_r_sbppbl"]] <- g$selected_row
         fields[["how_sbppbl"]] <- g$how_to_achieve
-
-        # IMPORTANT: Do NOT set review_q2_sbppbl here
       }
       else if (grp == "profics") {
         fields[["prior_goal_profics"]] <- g$had_prior_goal
@@ -911,8 +907,6 @@ server <- function(input, output, session) {
         fields[["goal_level_profics"]] <- g$selected_level
         fields[["goal_r_profics"]] <- g$selected_row
         fields[["how_profics"]] <- g$how_to_achieve
-
-        # IMPORTANT: Do NOT set review_q2_profics here
       }
 
       # Now set just the specific matrix cell based on competency and row
@@ -945,68 +939,95 @@ server <- function(input, output, session) {
       }
     }
 
-    # Build data manually in the exact format REDCap expects
-    data_str <- sprintf(
-      '[{"record_id":"%s","redcap_repeat_instrument":"ilp","redcap_repeat_instance":"%s"',
-      as.character(record_id), instance_num
+    # Create a data frame with one row for the JSON conversion
+    data_df <- data.frame(
+      record_id = as.character(record_id),
+      redcap_repeat_instrument = "ilp",
+      redcap_repeat_instance = instance_num,
+      ilp_complete = "0",
+      stringsAsFactors = FALSE
     )
 
-    # Add all fields
+    # Add all fields to the data frame
     for (field in names(fields)) {
       if (!is.null(fields[[field]]) && !is.na(fields[[field]])) {
-        # Escape quotes in values if any
-        value <- gsub('"', '\\"', as.character(fields[[field]]))
-        data_str <- paste0(data_str, sprintf(',"%s":"%s"', field, value))
+        data_df[[field]] <- as.character(fields[[field]])
       }
     }
 
-    # Add complete status
-    data_str <- paste0(data_str, ',"ilp_complete":"0"')
+    # Convert to JSON using jsonlite (must be installed)
+    tryCatch({
+      if (!requireNamespace("jsonlite", quietly = TRUE)) {
+        # If jsonlite is not available, fall back to manual JSON construction
+        data_str <- '['
+        data_str <- paste0(data_str, '{"record_id":"', record_id, '"')
+        data_str <- paste0(data_str, ',"redcap_repeat_instrument":"ilp"')
+        data_str <- paste0(data_str, ',"redcap_repeat_instance":"', instance_num, '"')
 
-    # Close the object and array
-    data_str <- paste0(data_str, "}]")
+        # Add all fields
+        for (field in names(fields)) {
+          if (!is.null(fields[[field]]) && !is.na(fields[[field]])) {
+            # Proper JSON escaping for strings
+            value <- gsub('\\', '\\\\', as.character(fields[[field]]), fixed=TRUE)
+            value <- gsub('"', '\\"', value, fixed=TRUE)
+            data_str <- paste0(data_str, ',"', field, '":"', value, '"')
+          }
+        }
 
-    message("DEBUG: Submitting ILP JSON data (first 100 chars): ", substr(data_str, 1, 100))
+        # Add complete status and close
+        data_str <- paste0(data_str, ',"ilp_complete":"0"}]')
+      } else {
+        # Use jsonlite if available (recommended)
+        data_str <- jsonlite::toJSON(data_df, auto_unbox = FALSE)
+      }
 
-    # Submit to REDCap using the direct approach that worked for s_eval
-    response <- httr::POST(
-      url = redcap_url,
-      body = list(
-        token = token,
-        content = "record",
-        action = "import",
-        format = "json",
-        type = "flat",
-        overwriteBehavior = "normal",
-        forceAutoNumber = "false",
-        data = data_str,
-        returnContent = "count",
-        returnFormat = "json"
-      ),
-      encode = "form"
-    )
+      message("DEBUG: Generated JSON data: ", substr(data_str, 1, 100), "...")
 
-    # Process response
-    status_code <- httr::status_code(response)
-    response_content <- httr::content(response, "text", encoding = "UTF-8")
+      # Submit to REDCap
+      response <- httr::POST(
+        url = redcap_url,
+        body = list(
+          token = token,
+          content = "record",
+          action = "import",
+          format = "json",
+          type = "flat",
+          overwriteBehavior = "normal",
+          forceAutoNumber = "false",
+          data = data_str,
+          returnContent = "count",
+          returnFormat = "json"
+        ),
+        encode = "form"
+      )
 
-    message("REDCap API response status: ", status_code)
-    message("REDCap API response: ", response_content)
+      # Process response
+      status_code <- httr::status_code(response)
+      response_content <- httr::content(response, "text", encoding = "UTF-8")
 
-    # Return result
-    if (status_code == 200) {
-      return(list(
-        success = TRUE,
-        outcome_message = paste("Successfully submitted ILP data for record", record_id)
-      ))
-    } else {
+      message("REDCap API response status: ", status_code)
+      message("REDCap API response: ", response_content)
+
+      # Return result
+      if (status_code == 200) {
+        return(list(
+          success = TRUE,
+          outcome_message = paste("Successfully submitted ILP data for record", record_id)
+        ))
+      } else {
+        return(list(
+          success = FALSE,
+          outcome_message = paste("Failed to submit ILP data for record", record_id, ":", response_content)
+        ))
+      }
+    }, error = function(e) {
+      message("Error in JSON processing: ", e$message)
       return(list(
         success = FALSE,
-        outcome_message = paste("Failed to submit ILP data for record", record_id, ":", response_content)
+        outcome_message = paste("JSON processing error:", e$message)
       ))
-    }
+    })
   }
-
   # The observer handling the submission button click doesn't need to change
   observeEvent(goals_mod$submission_ready(), {
     message("🚀 DEBUG: submission_ready() triggered")

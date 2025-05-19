@@ -20,6 +20,7 @@ library(htmltools)
 library(data.table)
 library(purrr)
 library(ggradar)
+library(jsonlite)
 
 # Add this to your global.R file
 initialize_app_config <- function() {

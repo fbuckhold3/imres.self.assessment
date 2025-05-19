@@ -1,6 +1,11 @@
 server <- function(input, output, session) {
   redcap_url <- "https://redcapsurvey.slu.edu/api/"
 
+  # Fix validate function ambiguity
+  # Option 1: Make shiny's validate the default
+  validate <- shiny::validate
+  need <- shiny::need
+
   observe({
     # Debug the period selection
     req(selected_period())

@@ -921,140 +921,206 @@ server <- function(input, output, session) {
 
     message("DEBUG: Using instance number ", instance_num, " for period ", period)
 
-    # Create a simple data structure
-    data_list <- list(
-      list(
-        record_id = record_id,
-        redcap_repeat_instrument = "ilp",
-        redcap_repeat_instance = instance_num,
-        ilp_date = format(Sys.Date(), "%Y-%m-%d"),
-        year_resident = as.character(period_code)
-      )
+    # Create fields collection - only basic fields initially
+    fields <- list(
+      ilp_date = format(Sys.Date(), "%Y-%m-%d"),
+      year_resident = as.character(period_code)
     )
 
-    # Process each group of competencies (if responses exist)
-    if (!is.null(resp)) {
-      # Process PCMK
-      if (!is.null(resp$pcmk)) {
-        g <- resp$pcmk
-        data_list[[1]][["prior_goal_pcmk"]] <- g$had_prior_goal
-        data_list[[1]][["review_q_pcmk"]] <- g$review
-        data_list[[1]][["goal_pcmk"]] <- as.character(g$subcompetency)
-        data_list[[1]][["goal_level_pcmk"]] <- g$selected_level
-        data_list[[1]][["goal_level_r_pcmk"]] <- g$selected_row
-        data_list[[1]][["how_pcmk"]] <- g$how_to_achieve
+    # Prepare mapping vectors for subcompetency options
+    # These should contain ONLY the numeric indices like "1", "2", etc., NOT the full ids
+    # The indices should match the position in these vectors, not the values
+    pcmk_vec <- c(
+      "1", "2", "3", "4", "5", "6",  # PC indices
+      "1", "2", "3"                 # MK indices
+    )
 
-        # Set matrix cell
-        if (!is.null(g$subcompetency) && !is.null(g$selected_row) && !is.null(g$selected_level)) {
-          cell_name <- NULL
+    sbppbl_vec <- c(
+      "1", "2", "3",    # SBP indices
+      "1", "2"         # PBLI indices
+    )
 
-          if (startsWith(g$subcompetency, "PC")) {
-            cell_name <- paste0("pc", substr(g$subcompetency, 3, 3), "_r", g$selected_row)
-          } else if (startsWith(g$subcompetency, "MK")) {
-            cell_name <- paste0("mk", substr(g$subcompetency, 3, 3), "_r", g$selected_row)
-          }
+    profics_vec <- c(
+      "1", "2", "3", "4",   # PROF indices
+      "1", "2", "3"         # ICS indices
+    )
 
-          if (!is.null(cell_name)) {
-            data_list[[1]][[cell_name]] <- as.character(g$selected_level)
-          }
-        }
-      }
-
-      # Process SBPPBL
-      if (!is.null(resp$sbppbl)) {
-        g <- resp$sbppbl
-        data_list[[1]][["prior_goal_sbppbl"]] <- g$had_prior_goal
-        data_list[[1]][["review_q_sbppbl"]] <- g$review
-        data_list[[1]][["goal_sbppbl"]] <- as.character(g$subcompetency)
-        data_list[[1]][["goal_level_sbppbl"]] <- g$selected_level
-        data_list[[1]][["goal_r_sbppbl"]] <- g$selected_row
-        data_list[[1]][["how_sbppbl"]] <- g$how_to_achieve
-
-        # Set matrix cell
-        if (!is.null(g$subcompetency) && !is.null(g$selected_row) && !is.null(g$selected_level)) {
-          cell_name <- NULL
-
-          if (startsWith(g$subcompetency, "SBP")) {
-            cell_name <- paste0("sbp", substr(g$subcompetency, 4, 4), "_r", g$selected_row)
-          } else if (startsWith(g$subcompetency, "PBLI")) {
-            cell_name <- paste0("pbl", substr(g$subcompetency, 5, 5), "_r", g$selected_row)
-          }
-
-          if (!is.null(cell_name)) {
-            data_list[[1]][[cell_name]] <- as.character(g$selected_level)
-          }
-        }
-      }
-
-      # Process PROFICS
-      if (!is.null(resp$profics)) {
-        g <- resp$profics
-        data_list[[1]][["prior_goal_profics"]] <- g$had_prior_goal
-        data_list[[1]][["review_q_profics"]] <- g$review
-        data_list[[1]][["goal_subcomp_profics"]] <- as.character(g$subcompetency)
-        data_list[[1]][["goal_level_profics"]] <- g$selected_level
-        data_list[[1]][["goal_r_profics"]] <- g$selected_row
-        data_list[[1]][["how_profics"]] <- g$how_to_achieve
-
-        # Set matrix cell
-        if (!is.null(g$subcompetency) && !is.null(g$selected_row) && !is.null(g$selected_level)) {
-          cell_name <- NULL
-
-          if (startsWith(g$subcompetency, "PROF")) {
-            cell_name <- paste0("prof", substr(g$subcompetency, 5, 5), "_r", g$selected_row)
-          } else if (startsWith(g$subcompetency, "ICS")) {
-            cell_name <- paste0("ics", substr(g$subcompetency, 4, 4), "_r", g$selected_row)
-          }
-
-          if (!is.null(cell_name)) {
-            data_list[[1]][[cell_name]] <- as.character(g$selected_level)
-          }
-        }
-      }
-    }
-
-    # Always set complete field
-    data_list[[1]][["ilp_complete"]] <- "0"
-
-    # Create JSON - manually to ensure correct format
-    json_string <- "["
-
-    # Add first object start
-    json_string <- paste0(json_string, "{")
-
-    # Add each field
-    first_field <- TRUE
-    for (field_name in names(data_list[[1]])) {
-      field_value <- data_list[[1]][[field_name]]
-
-      # Skip null or NA values
-      if (is.null(field_value) || is.na(field_value)) {
+    # Process each group of competencies
+    for (grp in c("pcmk", "sbppbl", "profics")) {
+      g <- resp[[grp]]
+      if (is.null(g)) {
+        message("DEBUG: No data for group ", grp)
         next
       }
 
-      # Add comma except for first field
-      if (!first_field) {
-        json_string <- paste0(json_string, ",")
-      } else {
-        first_field <- FALSE
+      message("DEBUG: Processing group ", grp)
+
+      # Map the competency based on type
+      if (grp == "pcmk") {
+        # Determine the index based on competency type and number
+        if (!is.null(g$subcompetency)) {
+          if (startsWith(g$subcompetency, "PC")) {
+            # Extract just the number from PC#
+            comp_num <- as.numeric(substr(g$subcompetency, 3, nchar(g$subcompetency)))
+            # PC numbers range from 1-6
+            goal_index <- as.character(comp_num)
+          } else if (startsWith(g$subcompetency, "MK")) {
+            # Extract just the number from MK#
+            comp_num <- as.numeric(substr(g$subcompetency, 3, nchar(g$subcompetency)))
+            # MK numbers range from 1-3, but we need to offset by 6 in the pcmk_vec
+            goal_index <- as.character(comp_num)
+          } else {
+            goal_index <- NULL
+          }
+
+          message("DEBUG: Mapping ", g$subcompetency, " to goal_pcmk index: ", goal_index)
+
+          fields[["prior_goal_pcmk"]] <- g$had_prior_goal
+          fields[["review_q_pcmk"]] <- g$review
+          fields[["goal_pcmk"]] <- goal_index  # Use the numeric index
+          fields[["goal_level_pcmk"]] <- g$selected_level
+          fields[["goal_level_r_pcmk"]] <- g$selected_row
+          fields[["how_pcmk"]] <- g$how_to_achieve
+        }
+      }
+      else if (grp == "sbppbl") {
+        if (!is.null(g$subcompetency)) {
+          if (startsWith(g$subcompetency, "SBP")) {
+            # Extract just the number from SBP#
+            comp_num <- as.numeric(substr(g$subcompetency, 4, nchar(g$subcompetency)))
+            goal_index <- as.character(comp_num)
+          } else if (startsWith(g$subcompetency, "PBLI")) {
+            # Extract just the number from PBLI#
+            comp_num <- as.numeric(substr(g$subcompetency, 5, nchar(g$subcompetency)))
+            # PBLI numbers range from 1-2, but we need to offset them in sbppbl_vec
+            goal_index <- as.character(comp_num)
+          } else {
+            goal_index <- NULL
+          }
+
+          message("DEBUG: Mapping ", g$subcompetency, " to goal_sbppbl index: ", goal_index)
+
+          fields[["prior_goal_sbppbl"]] <- g$had_prior_goal
+          fields[["review_q_sbppbl"]] <- g$review
+          fields[["goal_sbppbl"]] <- goal_index  # Use the numeric index
+          fields[["goal_level_sbppbl"]] <- g$selected_level
+          fields[["goal_r_sbppbl"]] <- g$selected_row
+          fields[["how_sbppbl"]] <- g$how_to_achieve
+        }
+      }
+      else if (grp == "profics") {
+        if (!is.null(g$subcompetency)) {
+          if (startsWith(g$subcompetency, "PROF")) {
+            # Extract just the number from PROF#
+            comp_num <- as.numeric(substr(g$subcompetency, 5, nchar(g$subcompetency)))
+            goal_index <- as.character(comp_num)
+          } else if (startsWith(g$subcompetency, "ICS")) {
+            # Extract just the number from ICS#
+            comp_num <- as.numeric(substr(g$subcompetency, 4, nchar(g$subcompetency)))
+            # ICS numbers range from 1-3, but we need to offset them in profics_vec
+            goal_index <- as.character(comp_num)
+          } else {
+            goal_index <- NULL
+          }
+
+          message("DEBUG: Mapping ", g$subcompetency, " to goal_subcomp_profics index: ", goal_index)
+
+          fields[["prior_goal_profics"]] <- g$had_prior_goal
+          fields[["review_q_profics"]] <- g$review
+          fields[["goal_subcomp_profics"]] <- goal_index  # Use the numeric index
+          fields[["goal_level_profics"]] <- g$selected_level
+          fields[["goal_r_profics"]] <- g$selected_row
+          fields[["how_profics"]] <- g$how_to_achieve
+        }
       }
 
-      # Convert to string and escape special characters
-      field_value_str <- as.character(field_value)
-      field_value_str <- gsub('\\', '\\\\', field_value_str, fixed = TRUE)
-      field_value_str <- gsub('"', '\\"', field_value_str, fixed = TRUE)
+      # Now set just the specific matrix cell based on competency and row
+      if (grp == "pcmk" && !is.null(g$subcompetency) && !is.null(g$selected_row) && !is.null(g$selected_level)) {
+        cell_name <- NULL
 
-      # Add field
-      json_string <- paste0(json_string, '"', field_name, '":"', field_value_str, '"')
+        if (startsWith(g$subcompetency, "PC")) {
+          cell <- paste0("pc", substr(g$subcompetency, 3, 3), "_r", g$selected_row)
+          fields[[cell]] <- as.character(g$selected_level)
+          message("DEBUG: Set matrix cell: ", cell, " = ", fields[[cell]])
+        } else if (startsWith(g$subcompetency, "MK")) {
+          cell <- paste0("mk", substr(g$subcompetency, 3, 3), "_r", g$selected_row)
+          fields[[cell]] <- as.character(g$selected_level)
+          message("DEBUG: Set matrix cell: ", cell, " = ", fields[[cell]])
+        }
+      }
+      else if (grp == "sbppbl" && !is.null(g$subcompetency) && !is.null(g$selected_row) && !is.null(g$selected_level)) {
+        cell_name <- NULL
+
+        if (startsWith(g$subcompetency, "SBP")) {
+          cell <- paste0("sbp", substr(g$subcompetency, 4, 4), "_r", g$selected_row)
+          fields[[cell]] <- as.character(g$selected_level)
+          message("DEBUG: Set matrix cell: ", cell, " = ", fields[[cell]])
+        } else if (startsWith(g$subcompetency, "PBLI")) {
+          cell <- paste0("pbl", substr(g$subcompetency, 5, 5), "_r", g$selected_row)
+          fields[[cell]] <- as.character(g$selected_level)
+          message("DEBUG: Set matrix cell: ", cell, " = ", fields[[cell]])
+        }
+      }
+      else if (grp == "profics" && !is.null(g$subcompetency) && !is.null(g$selected_row) && !is.null(g$selected_level)) {
+        cell_name <- NULL
+
+        if (startsWith(g$subcompetency, "PROF")) {
+          cell <- paste0("prof", substr(g$subcompetency, 5, 5), "_r", g$selected_row)
+          fields[[cell]] <- as.character(g$selected_level)
+          message("DEBUG: Set matrix cell: ", cell, " = ", fields[[cell]])
+        } else if (startsWith(g$subcompetency, "ICS")) {
+          cell <- paste0("ics", substr(g$subcompetency, 4, 4), "_r", g$selected_row)
+          fields[[cell]] <- as.character(g$selected_level)
+          message("DEBUG: Set matrix cell: ", cell, " = ", fields[[cell]])
+        }
+      }
     }
 
-    # Close object and array
-    json_string <- paste0(json_string, "}]")
+    # Create a data frame with one row for the JSON conversion
+    data_df <- data.frame(
+      record_id = record_id,
+      redcap_repeat_instrument = "ilp",
+      redcap_repeat_instance = instance_num,
+      ilp_complete = "0",
+      stringsAsFactors = FALSE
+    )
 
-    message("DEBUG: Final JSON data (truncated to 100 chars): ", substr(json_string, 1, 100))
+    # Add all fields to the data frame
+    for (field in names(fields)) {
+      if (!is.null(fields[[field]]) && !is.na(fields[[field]])) {
+        data_df[[field]] <- as.character(fields[[field]])
+      }
+    }
 
-    # Submit to REDCap with try-catch for better error handling
+    # Convert to JSON using jsonlite (must be installed)
     tryCatch({
+      if (!requireNamespace("jsonlite", quietly = TRUE)) {
+        # If jsonlite is not available, fall back to manual JSON construction
+        data_str <- '['
+        data_str <- paste0(data_str, '{"record_id":"', record_id, '"')
+        data_str <- paste0(data_str, ',"redcap_repeat_instrument":"ilp"')
+        data_str <- paste0(data_str, ',"redcap_repeat_instance":"', instance_num, '"')
+
+        # Add all fields
+        for (field in names(fields)) {
+          if (!is.null(fields[[field]]) && !is.na(fields[[field]])) {
+            # Proper JSON escaping for strings
+            value <- gsub('\\', '\\\\', as.character(fields[[field]]), fixed=TRUE)
+            value <- gsub('"', '\\"', value, fixed=TRUE)
+            data_str <- paste0(data_str, ',"', field, '":"', value, '"')
+          }
+        }
+
+        # Add complete status and close
+        data_str <- paste0(data_str, ',"ilp_complete":"0"}]')
+      } else {
+        # Use jsonlite if available (recommended)
+        data_str <- jsonlite::toJSON(data_df, auto_unbox = FALSE)
+      }
+
+      message("DEBUG: Generated JSON data: ", substr(data_str, 1, 200), "...")
+
+      # Submit to REDCap
       response <- httr::POST(
         url = redcap_url,
         body = list(
@@ -1065,21 +1131,21 @@ server <- function(input, output, session) {
           type = "flat",
           overwriteBehavior = "normal",
           forceAutoNumber = "false",
-          data = json_string,
+          data = data_str,
           returnContent = "count",
           returnFormat = "json"
         ),
         encode = "form"
       )
 
-      # Get response details
+      # Process response
       status_code <- httr::status_code(response)
       response_content <- httr::content(response, "text", encoding = "UTF-8")
 
       message("REDCap API response status: ", status_code)
       message("REDCap API response: ", response_content)
 
-      # Check response
+      # Return result
       if (status_code == 200) {
         return(list(
           success = TRUE,
@@ -1092,10 +1158,10 @@ server <- function(input, output, session) {
         ))
       }
     }, error = function(e) {
-      message("Error submitting to REDCap: ", e$message)
+      message("Error in JSON processing: ", e$message)
       return(list(
         success = FALSE,
-        outcome_message = paste("Error submitting to REDCap:", e$message)
+        outcome_message = paste("JSON processing error:", e$message)
       ))
     })
   }
